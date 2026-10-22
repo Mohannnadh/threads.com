@@ -1,0 +1,263 @@
+
+/* Threads.com authentication design system */
+
+.auth-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: #ffffff;
+  color: #111111;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+.auth-panel {
+  width: 100%;
+  max-width: 420px;
+  margin: auto;
+}
+
+.auth-brand {
+  display: block;
+  margin-bottom: 64px;
+  color: #111111;
+  text-align: center;
+  text-decoration: none;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -1.4px;
+}
+
+.auth-brand span {
+  color: #777777;
+  font-weight: 500;
+}
+
+.auth-heading {
+  margin-bottom: 32px;
+}
+
+.auth-eyebrow {
+  margin: 0 0 12px;
+  color: #777777;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.auth-heading h1 {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 36px);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -1.5px;
+}
+
+.auth-description {
+  margin: 12px 0 0;
+  color: #707070;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.auth-field label,
+.auth-label-row label {
+  color: #222222;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.auth-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.auth-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 49px;
+  padding: 13px 14px;
+  border: 1px solid #dedede;
+  border-radius: 5px;
+  outline: none;
+  background: #ffffff;
+  color: #111111;
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 160ms ease;
+}
+
+.auth-field input::placeholder {
+  color: #999999;
+}
+
+.auth-field input:focus {
+  border-color: #111111;
+  box-shadow: 0 0 0 1px #111111;
+}
+
+.auth-field input:disabled {
+  background: #f7f7f7;
+  cursor: not-allowed;
+}
+
+.auth-text-link {
+  color: #222222;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-text-link:hover {
+  color: #666666;
+}
+
+.auth-primary-button {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 2px;
+  padding: 14px 18px;
+  border: 1px solid #111111;
+  border-radius: 5px;
+  background: #111111;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.auth-primary-button:hover:not(:disabled) {
+  border-color: #333333;
+  background: #333333;
+}
+
+.auth-primary-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.auth-message {
+  margin: -6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.auth-error {
+  color: #b42318;
+}
+
+.auth-success {
+  color: #187044;
+}
+
+.auth-switch {
+  margin: 28px 0 0;
+  color: #707070;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.auth-switch .auth-text-link {
+  font-size: 13px;
+}
+
+.auth-footer {
+  margin: 54px 0 0;
+  color: #999999;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+
+@media (max-width: 480px) {
+  .auth-page {
+    padding: 28px 22px;
+  }
+
+  .auth-brand {
+    margin-bottom: 48px;
+  }
+
+  .auth-heading h1 {
+    letter-spacing: -1px;
+  }
+
+  .auth-footer {
+    margin-top: 42px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-field input,
+  .auth-primary-button {
+    transition: none;
+  }
+}
+
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.password-input-wrapper input {
+  width: 100%;
+  padding-right: 48px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.password-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.password-match-message {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.password-match-success {
+  color: #21834a;
+}
+
+.password-match-error {
+  color: #c62828;
+}
