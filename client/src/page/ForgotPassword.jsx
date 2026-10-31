@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles/auth.css';
+import { API_BASE_URL } from '../config.js';
 
 const ForgotPassword = () => {
   const navigate = useNavigate();
@@ -18,7 +19,7 @@ const ForgotPassword = () => {
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/forgot-password',
+        `${API_BASE_URL}/api/auth/forgot-password`,
         {
           method: 'POST',
           headers: {

@@ -4,6 +4,8 @@ const express = require('express');
 const {
   register,
   login,
+  googleSignIn,
+  adminLogin,
   forgotPasswordController,
   verifyOtpController,
   resetPasswordController,
@@ -16,6 +18,8 @@ const router = express.Router();
 
 router.post('/register', register);
 router.post('/login', login);
+router.post('/google', googleSignIn);
+router.post('/admin/login', adminLogin);
 router.post('/forgot-password', forgotPasswordController);
 router.post('/reset-password', resetPasswordController);
 router.post('/verify-otp', verifyOtpController);

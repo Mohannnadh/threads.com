@@ -1,0 +1,117 @@
+/* Pagination control shared by the shop and admin lists. */
+
+.pg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-top: 40px;
+  color: #171717;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.pg-summary {
+  margin: 0;
+  font-size: 13px;
+  color: #6b6b6b;
+}
+
+.pg-summary strong {
+  color: #171717;
+  font-weight: 600;
+}
+
+.pg-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pg-pages {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pg-btn {
+  min-width: 40px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid #d4d4d4;
+  border-radius: 8px;
+  background: #fff;
+  color: #171717;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.pg-btn:hover:not(:disabled) {
+  border-color: #171717;
+  background: #f5f5f5;
+}
+
+.pg-btn:focus-visible {
+  outline: 3px solid #bbb;
+  outline-offset: 2px;
+}
+
+.pg-btn:disabled {
+  cursor: default;
+}
+
+.pg-btn.is-current,
+.pg-btn.is-current:disabled {
+  background: #171717;
+  border-color: #171717;
+  color: #fff;
+  opacity: 1;
+}
+
+.pg-btn:disabled:not(.is-current) {
+  opacity: 0.4;
+}
+
+.pg-ellipsis {
+  padding: 0 4px;
+  color: #999;
+}
+
+/* Shop variant: sharper, uppercase, to match the storefront headings. */
+.pg-default .pg-btn,
+.pg-shop .pg-btn {
+  border-radius: 0;
+  height: 40px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pg-default .pg-summary,
+.pg-shop .pg-summary {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 560px) {
+  .pg {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .pg-controls {
+    justify-content: center;
+  }
+
+  .pg-nav {
+    padding: 0 12px;
+  }
+}

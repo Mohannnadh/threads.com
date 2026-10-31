@@ -1,10 +1,16 @@
 
+import { useState } from 'react';
+import { offerBadge, offerSaving } from '../utils/offer.js';
+import { totalStock, lowStockSizes } from '../utils/stock.js';
 import { useNavigate } from 'react-router-dom';
 import { useWishlist } from '../context/WishlistContext.jsx';
+import { Icon } from './Icon.jsx';
 
 const ProductCard = ({ product }) => {
   const navigate = useNavigate();
   const { isWishlisted, toggleWishlist } = useWishlist();
+  const [imageError, setImageError] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
   const wishlisted = isWishlisted(product._id);
 
@@ -32,12 +38,17 @@ const ProductCard = ({ product }) => {
     >
       <div
         onClick={handleOpenProduct}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') handleOpenProduct();
-        }}
         role="link"
         tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            handleOpenProduct();
+          }
+        }}
         aria-label={`View ${product.name}`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
           position: 'relative',
           background: '#f3f1ed',
@@ -45,16 +56,19 @@ const ProductCard = ({ product }) => {
           overflow: 'hidden',
         }}
       >
-        {imageUrl ? (
+        {imageUrl && !imageError ? (
           <img
             src={imageUrl}
             alt={product.name}
             loading="lazy"
+            onError={() => setImageError(true)}
             style={{
               width: '100%',
               height: '100%',
               objectFit: 'cover',
               display: 'block',
+              transform: hovered ? 'scale(1.06)' : 'scale(1)',
+              transition: 'transform 0.4s ease-out',
             }}
           />
         ) : (
@@ -76,7 +90,9 @@ const ProductCard = ({ product }) => {
         <button
           type="button"
           onClick={handleWishlist}
-          aria-label={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+          aria-label={
+            wishlisted ? 'Remove from wishlist' : 'Add to wishlist'
+          }
           aria-pressed={wishlisted}
           style={{
             position: 'absolute',
@@ -92,7 +108,7 @@ const ProductCard = ({ product }) => {
             cursor: 'pointer',
           }}
         >
-          {wishlisted ? '♥' : '♡'}
+          <Icon name="heart" filled={wishlisted} />
         </button>
       </div>
 
@@ -122,14 +138,35 @@ const ProductCard = ({ product }) => {
         </h3>
 
         <p style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>
-          ₹{Number(product.price).toLocaleString('en-IN')}
+          {product.offer && Number(product.finalPrice) < Number(product.price) && (
+            <span style={{ textDecoration: 'line-through', color: '#999', fontWeight: 400, marginRight: 8 }}>
+              ₹{Number(product.price).toLocaleString('en-IN')}
+            </span>
+          )}
+          ₹{Number(product.finalPrice ?? product.price).toLocaleString('en-IN')}
         </p>
 
-        {Number(product.stock) <= 0 && (
-          <p style={{ margin: '8px 0 0', color: '#b42318', fontSize: '12px' }}>
-            Out of stock
+        {product.offer && offerSaving(product.price, product.finalPrice) > 0 && (
+          <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: 600, color: '#2e7d32' }}>
+            {offerBadge(product.offer)}
           </p>
         )}
+
+        {totalStock(product) <= 0 ? (
+          <p
+            style={{
+              margin: '8px 0 0',
+              color: '#b42318',
+              fontSize: '12px',
+            }}
+          >
+            Out of stock
+          </p>
+        ) : lowStockSizes(product).length > 0 ? (
+          <p style={{ margin: '8px 0 0', color: '#b26a00', fontSize: '12px' }}>
+            Low stock: {lowStockSizes(product).length} size{lowStockSizes(product).length === 1 ? '' : 's'} almost sold out
+          </p>
+        ) : null}
       </div>
     </article>
   );

@@ -2,11 +2,13 @@
   const {
   registerUser,
   loginUser,
+  loginAdmin,
   forgotPassword,
   verifyOtp,
   resetPassword,
   changePassword,
 } = require('./auth.service');
+const { googleLogin } = require('./google.service');
 
   const register = async (req, res) => {
     try {
@@ -33,6 +35,23 @@
       });
     }
   };
+  // Google sign-in: the browser sends Google's signed token.
+  const googleSignIn = async (req, res) => {
+    try {
+      const credential = req.body?.credential;
+
+      if (!credential || typeof credential !== 'string') {
+        return res.status(400).json({ success: false, message: 'Google sign-in did not return a token' });
+      }
+
+      const result = await googleLogin(credential);
+
+      return res.status(200).json({ success: true, message: 'Signed in with Google', ...result });
+    } catch (error) {
+      return res.status(401).json({ success: false, message: error.message });
+    }
+  };
+
   const login = async (req, res) => {
     try {
       const { email, password } = req.body;
@@ -58,9 +77,40 @@
       });
     }
   };
-  const forgotPasswordController = async (req, res) => {
+  const adminLogin = async (req, res) => {
   try {
-    console.log('FORGOT PASSWORD REQUEST:', req.body);
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required',
+      });
+    }
+
+    const result = await loginAdmin({
+      email: String(email).trim().toLowerCase(),
+      password,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Admin login successful',
+      ...result,
+    });
+  } catch (error) {
+    const isForbidden =
+      error.message === 'This account does not have admin access';
+
+    return res.status(isForbidden ? 403 : 401).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+const forgotPasswordController = async (req, res) => {
+  try {
 
     const { email } = req.body;
 
@@ -218,6 +268,8 @@ const changePasswordController = async (req, res) => {
 module.exports = {
   register,
   login,
+  googleSignIn,
+  adminLogin,
   forgotPasswordController,
   verifyOtpController,
   resetPasswordController,

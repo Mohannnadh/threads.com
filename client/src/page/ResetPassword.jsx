@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import '../styles/auth.css';
+import { API_BASE_URL } from '../config.js';
 
 const ResetPassword = () => {
   const location = useLocation();
@@ -38,7 +39,7 @@ const ResetPassword = () => {
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/reset-password',
+        `${API_BASE_URL}/api/auth/reset-password`,
         {
           method: 'POST',
           headers: {

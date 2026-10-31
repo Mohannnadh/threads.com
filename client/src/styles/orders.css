@@ -1,0 +1,342 @@
+/* My Orders: black and white, matching the wallet page. */
+
+.ord-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 16px 100px;
+  color: #111;
+  font-family: inherit;
+}
+
+.ord-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: #777;
+}
+
+.ord-title {
+  margin: 6px 0 24px;
+  font-size: clamp(30px, 6vw, 42px);
+  font-weight: 500;
+}
+
+.ord-error {
+  color: #b00020;
+  font-size: 14px;
+}
+
+.ord-empty {
+  padding: 40px 0;
+}
+
+.ord-empty p {
+  color: #666;
+}
+
+.ord-card {
+  border: 1px solid #e2e2e2;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+  background: #fff;
+}
+
+.ord-head {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+}
+
+.ord-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ord-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #777;
+}
+
+.ord-status {
+  font-weight: 600;
+}
+
+/* Tracker */
+
+.ot {
+  margin-top: 20px;
+}
+
+.ot-steps {
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ot-step {
+  flex: 1;
+  min-width: 0;
+  border-top: 3px solid #e5e5e5;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ot-step.is-done {
+  border-top-color: #111;
+}
+
+.ot-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid #bbb;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.ot-step.is-done .ot-dot {
+  background: #111;
+  border-color: #111;
+}
+
+.ot-label {
+  font-size: 13px;
+  color: #999;
+}
+
+.ot-step.is-done .ot-label {
+  color: #111;
+  font-weight: 600;
+}
+
+.ot-time {
+  font-size: 11px;
+  color: #777;
+  min-height: 14px;
+}
+
+.ot-shipping {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #444;
+}
+
+.ot-cancelled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f4f4f4;
+  font-size: 14px;
+}
+
+/* Items */
+
+.ord-items {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  border-top: 1px solid #eee;
+}
+
+.ord-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.ord-item-main {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ord-item-name {
+  font-weight: 500;
+}
+
+.ord-item-meta,
+.ord-muted {
+  font-size: 13px;
+  color: #666;
+}
+
+.ord-item-price {
+  font-weight: 500;
+}
+
+.ord-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.ord-tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f0f0f0;
+  color: #333;
+}
+
+.ord-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+/* Buttons and forms */
+
+.ord-btn {
+  appearance: none;
+  border: 1px solid #111;
+  background: #fff;
+  color: #111;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ord-btn:hover:not(:disabled) {
+  background: #111;
+  color: #fff;
+}
+
+.ord-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ord-btn-primary {
+  background: #111;
+  color: #fff;
+}
+
+.ord-btn-primary:hover:not(:disabled) {
+  background: #333;
+  color: #fff;
+}
+
+.ord-form {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.ord-form-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.ord-note {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.ord-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ord-field-label {
+  font-size: 13px;
+  padding: 0;
+}
+
+.ord-field input,
+.ord-field textarea,
+.ord-field select {
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+}
+
+.ord-choice {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.ord-choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.ord-stars {
+  display: flex;
+  gap: 4px;
+}
+
+.ord-star {
+  appearance: none;
+  border: 0;
+  background: none;
+  font-size: 28px;
+  line-height: 1;
+  color: #ccc;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.ord-star.is-on {
+  color: #111;
+}
+
+.ord-form-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+  .ot-label {
+    font-size: 11px;
+  }
+
+  .ord-item-actions {
+    justify-content: flex-start;
+  }
+}

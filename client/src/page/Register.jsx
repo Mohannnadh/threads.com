@@ -2,9 +2,16 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles/auth.css';
+import { API_BASE_URL } from '../config.js';
+import { Icon } from '../components/Icon.jsx';
+import GoogleSignInButton from '../components/GoogleSignInButton.jsx';
+import { loginWithGoogle } from '../services/authService.js';
+import { useAuth } from '../context/AuthContext.jsx';
+import { getSessionToken } from '../utils/session.js';
 
 const Register = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -49,10 +56,14 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const { confirmPassword, ...registrationData } = formData;
+      const registrationData = {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+      };
 
       const response = await fetch(
-        'http://localhost:5000/api/auth/register',
+        `${API_BASE_URL}/api/auth/register`,
         {
           method: 'POST',
           headers: {
@@ -83,8 +94,44 @@ const Register = () => {
       });
 
       navigate('/login');
-    } catch (error) {
+    } catch {
       setError('Unable to connect to the server.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleCredential = async (credential, googleError) => {
+    if (googleError) {
+      setError(googleError.message);
+      return;
+    }
+
+    if (!credential) {
+      setError('Google sign-in did not return a credential. Please try again.');
+      return;
+    }
+
+    setMessage('');
+    setError('');
+    setLoading(true);
+
+    try {
+      const data = await loginWithGoogle(credential);
+
+      if (!data?.token) {
+        throw new Error('Authentication token was not received.');
+      }
+
+      login(data.token, data.user);
+
+      if (getSessionToken() !== data.token) {
+        throw new Error('Unable to save your login session.');
+      }
+
+      navigate('/home', { replace: true });
+    } catch (error) {
+      setError(error.message || 'Google sign-in failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -160,7 +207,7 @@ const Register = () => {
                 aria-pressed={showPassword}
                 disabled={loading}
               >
-                {showPassword ?  '👁':'︶' }
+                {showPassword ? <Icon name="eyeOff" /> : <Icon name="eye" />}
               </button>
             </div>
           </div>
@@ -200,7 +247,7 @@ const Register = () => {
                 aria-pressed={showConfirmPassword}
                 disabled={loading}
               >
-                {showConfirmPassword ? '👁':'︶'}
+                {showConfirmPassword ? <Icon name="eyeOff" /> : <Icon name="eye" />}
               </button>
             </div>
 
@@ -212,8 +259,8 @@ const Register = () => {
                 role="status"
               >
                 {passwordsMatch
-                  ? '✓ Passwords match'
-                  : '✕ Passwords do not match'}
+                  ? <><Icon name="check" size={14} /> Passwords match</>
+                  : <><Icon name="x" size={14} /> Passwords do not match</>}
               </p>
             )}
           </div>
@@ -238,6 +285,14 @@ const Register = () => {
             {loading ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT'}
           </button>
         </form>
+
+        <div className="auth-divider" aria-hidden="true">
+          <span>OR CONTINUE WITH</span>
+        </div>
+        <GoogleSignInButton
+          onCredential={handleGoogleCredential}
+          disabled={loading}
+        />
 
         <p className="auth-switch">
           Already have an account?{' '}

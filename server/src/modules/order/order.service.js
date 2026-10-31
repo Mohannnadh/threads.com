@@ -4,10 +4,78 @@ const Order = require('./order.model');
 const Product = require('../product/product.model');
 const User = require('../user/user.model');
 const razorpay = require('../../config/razorpay');
+const { escapeRegex } = require('../../utils/pagination');
+const wallet = require('../wallet/wallet.service');
+const {
+  resolveCoupon,
+  claimCouponUse,
+  releaseCouponUse,
+} = require('../coupon/coupon.service');
+const { effectivePrice } = require('../offer/offer.service');
+const {
+  hasVariants,
+  findVariant,
+  availableFor,
+  reserveStock,
+  restoreStock,
+} = require('../product/stock.service');
+
+const money = (value) => Math.round(Number(value) * 100) / 100;
+
+// Takes stock for every line of an order, one colour and size at a time. Lines
+// that were taken are added to `reserved`, so a failure can put them back.
+const reserveLines = async (items, reserved) => {
+  const lines = new Map();
+
+  for (const item of items) {
+    const key = `${String(item.product)}|${item.color || ''}|${item.size || ''}`;
+    const line = lines.get(key) || {
+      productId: String(item.product),
+      color: item.color || null,
+      size: item.size || null,
+      quantity: 0,
+    };
+
+    line.quantity += item.quantity;
+    lines.set(key, line);
+  }
+
+  for (const line of lines.values()) {
+    const taken = await reserveStock(line);
+
+    if (!taken) {
+      throw new Error('Stock changed while placing your order. Please try again.');
+    }
+
+    reserved.push(line);
+  }
+};
+
+// The photo the admin set for a colour, or null when there is none.
+const colorImageFor = (product, color) => {
+  const wanted = String(color || '').trim().toLowerCase();
+
+  if (!wanted) return null;
+
+  const entry = (product.colorImages || []).find(
+    (item) => item?.color && String(item.color).trim().toLowerCase() === wanted
+  );
+
+  return entry?.image || null;
+};
+
+const ORDER_STATUSES = [
+  'PLACED',
+  'CONFIRMED',
+  'PROCESSING',
+  'SHIPPED',
+  'DELIVERED',
+  'CANCELLED',
+];
 
 // Create a new order.
 const createOrder = async (userId, orderData) => {
-  const { items, shippingAddress, paymentMethod } = orderData;
+  const { items, shippingAddress, paymentMethod, couponCode } = orderData;
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     throw new Error('Invalid user ID');
@@ -17,7 +85,7 @@ const createOrder = async (userId, orderData) => {
     throw new Error('Your order must contain at least one product');
   }
 
-  if (!['COD', 'ONLINE'].includes(paymentMethod)) {
+  if (!['COD', 'ONLINE', 'WALLET'].includes(paymentMethod)) {
     throw new Error('Invalid payment method');
   }
 
@@ -72,6 +140,10 @@ const createOrder = async (userId, orderData) => {
   const orderItems = [];
   let subtotal = 0;
   const reserved = [];
+  let walletDebited = false;
+  let discount = 0;
+  let appliedCoupon = null;
+  let couponClaimed = false;
 
   try {
     // Validate products and use database prices.
@@ -82,10 +154,33 @@ const createOrder = async (userId, orderData) => {
         throw new Error(`Product not found: ${productId}`);
       }
 
-      if (product.stock < quantity) {
-        throw new Error(
-          `Insufficient stock for ${product.name}. Available: ${product.stock}`
-        );
+      // Each colour and size has its own stock.
+      const wanted = new Map();
+
+      for (const line of items.filter((item) => String(item.product) === productId)) {
+        const key = `${line.color || ''}|${line.size || ''}`;
+
+        wanted.set(key, {
+          color: line.color,
+          size: line.size,
+          quantity: (wanted.get(key)?.quantity || 0) + line.quantity,
+        });
+      }
+
+      for (const line of wanted.values()) {
+        if (hasVariants(product) && !findVariant(product, line.color, line.size)) {
+          throw new Error(
+            `${product.name} is not available in ${line.color || 'that colour'}${line.size ? ` / ${line.size}` : ''}`
+          );
+        }
+
+        const available = availableFor(product, line.color, line.size);
+
+        if (available < line.quantity) {
+          throw new Error(
+            `Only ${available} left for ${product.name}${line.color ? ` (${line.color}${line.size ? ` / ${line.size}` : ''})` : ''}`
+          );
+        }
       }
 
       const requestedLines = items.filter(
@@ -93,7 +188,9 @@ const createOrder = async (userId, orderData) => {
       );
 
       for (const item of requestedLines) {
-        const lineTotal = product.price * item.quantity;
+        // Price after any product offer, from the database.
+        const unitPrice = (await effectivePrice(product, item.color, item.size)).finalPrice;
+        const lineTotal = unitPrice * item.quantity;
 
         if (!Number.isFinite(lineTotal)) {
           throw new Error('Invalid order amount');
@@ -104,69 +201,109 @@ const createOrder = async (userId, orderData) => {
         orderItems.push({
           product: product._id,
           name: product.name,
-          price: product.price,
+          price: unitPrice,
           quantity: item.quantity,
           size: item.size || null,
           color: item.color || null,
-          image: product.images?.[0] || null,
+          image: colorImageFor(product, item.color) || product.images?.[0] || null,
         });
       }
     }
 
-    if (paymentMethod !== 'COD') {
+    if (paymentMethod === 'ONLINE') {
       throw new Error(
         'Online payment orders are not enabled yet. Please use COD until payment verification is implemented.'
       );
     }
 
-    // Reserve stock atomically.
-    for (const [productId, quantity] of quantities) {
-      const updatedProduct = await Product.findOneAndUpdate(
-        {
-          _id: productId,
-          stock: { $gte: quantity },
-        },
-        {
-          $inc: { stock: -quantity },
-        },
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
+     await reserveLines(items, reserved);
+   
+    
 
-      if (!updatedProduct) {
-        throw new Error(
-          'Stock changed while placing your order. Please try again.'
-        );
-      }
-
-      reserved.push({ productId, quantity });
-    }
 
     const shippingFee = 0;
-    const totalAmount = subtotal + shippingFee;
 
-    const order = await Order.create({
-      user: userId,
-      items: orderItems,
-      shippingAddress,
-      subtotal,
-      shippingFee,
-      totalAmount,
-      paymentMethod: 'COD',
-      paymentStatus: 'PENDING',
-      orderStatus: 'PLACED',
-    });
+    // Coupon: checked and claimed on the server, using database prices.
+    if (couponCode) {
+      const result = await resolveCoupon(couponCode, subtotal, userId);
 
-    return order;
+      appliedCoupon = result.coupon;
+      discount = result.discount;
+
+      await claimCouponUse(appliedCoupon);
+      couponClaimed = true;
+    }
+
+    const totalAmount = money(subtotal - discount + shippingFee);
+    const isWalletPayment = paymentMethod === 'WALLET';
+    const amountPaise = Math.round(totalAmount * 100);
+
+    // Generate the id up front so the wallet debit can reference it.
+    const orderId = new mongoose.Types.ObjectId();
+
+    if (isWalletPayment) {
+      if (!Number.isSafeInteger(amountPaise) || amountPaise <= 0) {
+        throw new Error('Invalid order amount');
+      }
+
+      await wallet.debit({
+        userId,
+        amount: amountPaise,
+        source: 'ORDER_PAYMENT',
+        reference: String(orderId),
+        description: 'Payment for order',
+      });
+
+      walletDebited = true;
+    }
+
+    try {
+      const order = await Order.create({
+        _id: orderId,
+        user: userId,
+        items: orderItems,
+        shippingAddress,
+        subtotal,
+        shippingFee,
+        totalAmount,
+        couponCode: appliedCoupon ? appliedCoupon.code : null,
+        discountAmount: discount,
+        paymentMethod: isWalletPayment ? 'WALLET' : 'COD',
+        paymentStatus: isWalletPayment ? 'PAID' : 'PENDING',
+        orderStatus: 'PLACED',
+      });
+
+      return order;
+    } catch (orderError) {
+      // The order was not saved, so give the wallet money back.
+      if (walletDebited) {
+        await wallet
+          .credit({
+            userId,
+            amount: amountPaise,
+            source: 'REFUND',
+            reference: String(orderId),
+            description: 'Refund for order that could not be placed',
+          })
+          .catch((refundError) => {
+            console.error(
+              'CRITICAL: Wallet refund failed for unsaved order:',
+              String(orderId),
+              refundError.message
+            );
+          });
+      }
+
+      throw orderError;
+    }
   } catch (error) {
+    if (couponClaimed) {
+      await releaseCouponUse(appliedCoupon.code);
+    }
+
     // Restore reserved stock if order creation fails.
     for (const item of reserved.reverse()) {
-      await Product.updateOne(
-        { _id: item.productId },
-        { $inc: { stock: item.quantity } }
-      ).catch((rollbackError) => {
+      await restoreStock(item).catch((rollbackError) => {
         console.error(
           'CRITICAL: Stock rollback failed:',
           item.productId,
@@ -180,7 +317,7 @@ const createOrder = async (userId, orderData) => {
 };
 
 const createOnlinePaymentOrder = async (userId, orderData) => {
-  const { items, shippingAddress } = orderData;
+  const { items, shippingAddress, couponCode } = orderData;
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     throw new Error('Invalid user ID');
@@ -240,6 +377,9 @@ const createOnlinePaymentOrder = async (userId, orderData) => {
   const orderItems = [];
   const reserved = [];
   let subtotal = 0;
+  let discount = 0;
+  let appliedCoupon = null;
+  let couponClaimed = false;
 
   try {
     // Calculate prices from MongoDB, never from the browser.
@@ -250,14 +390,41 @@ const createOnlinePaymentOrder = async (userId, orderData) => {
         throw new Error('Product not found');
       }
 
-      if (product.stock < quantity) {
-        throw new Error(`Insufficient stock for ${product.name}`);
+      // Each colour and size has its own stock.
+      const wanted = new Map();
+
+      for (const line of items.filter((item) => String(item.product) === productId)) {
+        const key = `${line.color || ''}|${line.size || ''}`;
+
+        wanted.set(key, {
+          color: line.color,
+          size: line.size,
+          quantity: (wanted.get(key)?.quantity || 0) + line.quantity,
+        });
+      }
+
+      for (const line of wanted.values()) {
+        if (hasVariants(product) && !findVariant(product, line.color, line.size)) {
+          throw new Error(
+            `${product.name} is not available in ${line.color || 'that colour'}${line.size ? ` / ${line.size}` : ''}`
+          );
+        }
+
+        const available = availableFor(product, line.color, line.size);
+
+        if (available < line.quantity) {
+          throw new Error(
+            `Only ${available} left for ${product.name}${line.color ? ` (${line.color}${line.size ? ` / ${line.size}` : ''})` : ''}`
+          );
+        }
       }
 
       for (const item of items.filter(
         (entry) => String(entry.product) === productId
       )) {
-        const lineTotal = product.price * item.quantity;
+        // Price after any product offer, from the database.
+        const unitPrice = (await effectivePrice(product, item.color, item.size)).finalPrice;
+        const lineTotal = unitPrice * item.quantity;
 
         if (!Number.isFinite(lineTotal)) {
           throw new Error('Invalid order amount');
@@ -268,17 +435,28 @@ const createOnlinePaymentOrder = async (userId, orderData) => {
         orderItems.push({
           product: product._id,
           name: product.name,
-          price: product.price,
+          price: unitPrice,
           quantity: item.quantity,
           size: item.size || null,
           color: item.color || null,
-          image: product.images?.[0] || null,
+          image: colorImageFor(product, item.color) || product.images?.[0] || null,
         });
       }
     }
 
     const shippingFee = 0;
-    const totalAmount = subtotal + shippingFee;
+
+    if (couponCode) {
+      const result = await resolveCoupon(couponCode, subtotal, userId);
+
+      appliedCoupon = result.coupon;
+      discount = result.discount;
+
+      await claimCouponUse(appliedCoupon);
+      couponClaimed = true;
+    }
+
+    const totalAmount = money(subtotal - discount + shippingFee);
     const amountInPaise = Math.round(totalAmount * 100);
 
     if (
@@ -288,25 +466,7 @@ const createOnlinePaymentOrder = async (userId, orderData) => {
       throw new Error('Invalid order amount');
     }
 
-    // Reserve stock atomically.
-    for (const [productId, quantity] of quantities) {
-      const updated = await Product.findOneAndUpdate(
-        {
-          _id: productId,
-          stock: { $gte: quantity },
-        },
-        { $inc: { stock: -quantity } },
-        { new: true, runValidators: true }
-      );
-
-      if (!updated) {
-        throw new Error(
-          'Stock changed while placing your order. Please try again.'
-        );
-      }
-
-      reserved.push({ productId, quantity });
-    }
+     await reserveLines(items, reserved);
 
     // Create Razorpay order with the server-calculated amount.
     const paymentOrder = await razorpay.orders.create({
@@ -323,6 +483,8 @@ const createOnlinePaymentOrder = async (userId, orderData) => {
       subtotal,
       shippingFee,
       totalAmount,
+      couponCode: appliedCoupon ? appliedCoupon.code : null,
+      discountAmount: discount,
       paymentMethod: 'ONLINE',
       paymentStatus: 'PENDING',
       orderStatus: 'PLACED',
@@ -340,13 +502,15 @@ const createOnlinePaymentOrder = async (userId, orderData) => {
       keyId: process.env.RAZORPAY_KEY_ID,
     };
   } catch (error) {
+    if (couponClaimed) {
+      await releaseCouponUse(appliedCoupon.code);
+    }
+
     // Restore stock reserved by this attempt.
     for (const item of reserved.reverse()) {
       try {
-        const result = await Product.updateOne(
-          { _id: item.productId },
-          { $inc: { stock: item.quantity } }
-        );
+        const restored = await restoreStock(item);
+        const result = { modifiedCount: restored ? 1 : 0 };
 
         if (result.modifiedCount !== 1) {
           console.error(
@@ -435,7 +599,7 @@ const verifyRazorpayPayment = async (userId, paymentData) => {
 
   const signaturesMatch =
     Buffer.byteLength(expectedSignature) ===
-      Buffer.byteLength(razorpay_signature) &&
+    Buffer.byteLength(razorpay_signature) &&
     crypto.timingSafeEqual(
       Buffer.from(expectedSignature),
       Buffer.from(razorpay_signature)
@@ -494,18 +658,84 @@ const verifyRazorpayPayment = async (userId, paymentData) => {
   return updatedOrder;
 };
 
-};
-// Get orders belonging to the logged-in customer.
-const getMyOrders = async (userId) => {
-  return Order.find({ user: userId }).sort({ createdAt: -1 });
+// One page of orders belonging to the logged-in customer.
+const getMyOrders = async (userId, { skip, limit }) => {
+  const filter = { user: userId };
+
+  const [orders, total] = await Promise.all([
+    Order.find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit),
+    Order.countDocuments(filter),
+  ]);
+
+  return { orders, total };
 };
 
 
-// Get all orders for admin order management.
-const getAllOrders = async () => {
-  return Order.find()
-    .populate('user', 'name email')
-    .sort({ createdAt: -1 });
+// One page of orders for admin management, with status and search filters.
+// Also returns how many orders are in each status (ignoring the search).
+const getAllOrders = async ({ skip, limit, status, search }) => {
+  const filter = {};
+
+  if (ORDER_STATUSES.includes(status)) {
+    filter.orderStatus = status;
+  }
+
+  if (search) {
+    const pattern = new RegExp(escapeRegex(search), 'i');
+
+    // Order numbers are shown as #A1B2C3 (admin) or TC-A1B2C3 (invoice). Drop the
+    // prefix so the part after it matches the end of the order ID.
+    const orderIdPart = search.replace(/^(#|tc-?)/i, '').trim();
+
+    const matchingUserIds = await User.find({
+      $or: [{ name: pattern }, { email: pattern }],
+    }).distinct('_id');
+
+    filter.$or = [
+      { 'shippingAddress.name': pattern },
+      { 'shippingAddress.phone': pattern },
+      { user: { $in: matchingUserIds } },
+      {
+        $expr: {
+          $regexMatch: {
+            input: { $toString: '$_id' },
+            regex: escapeRegex(orderIdPart || search),
+            options: 'i',
+          },
+        },
+      },
+    ];
+  }
+
+  const [orders, total, statusGroups] = await Promise.all([
+    Order.find(filter)
+      .populate('user', 'name email')
+      // Current product images, for orders saved without one.
+      .populate('items.product', 'images')
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit),
+    Order.countDocuments(filter),
+    Order.aggregate([
+      { $group: { _id: '$orderStatus', count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const counts = { ALL: 0 };
+
+  for (const status of ORDER_STATUSES) {
+    counts[status] = 0;
+  }
+
+  for (const group of statusGroups) {
+    counts[group._id] = group.count;
+    counts.ALL += group.count;
+  }
+
+  return { orders, total, counts };
 };
 
 // Update an order status and restore stock when cancelled.
@@ -540,7 +770,7 @@ const updateOrderStatus = async (orderId, orderStatus) => {
   }
 
   const previousStatus = order.orderStatus;
-  // Prevent cancellation of an already-paid online order.
+
   if (
     order.paymentMethod === 'ONLINE' &&
     order.paymentStatus === 'PAID' &&
@@ -557,125 +787,178 @@ const updateOrderStatus = async (orderId, orderStatus) => {
     );
   }
 
-  // Only one request can successfully claim this status transition.
-  const updatedOrder = await Order.findOneAndUpdate(
-    {
-      _id: orderId,
-      orderStatus: previousStatus,
-    },
-    {
-      $set: { orderStatus },
-    },
-    {
-      new: true,
-      runValidators: true,
-    }
-  );
-
-  if (!updatedOrder) {
-    throw new Error(
-      'Order status changed by another request. Please refresh and try again.'
+  // Non-cancellation transitions do not release inventory.
+  if (orderStatus !== 'CANCELLED') {
+    const updatedOrder = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        orderStatus: previousStatus,
+      },
+      {
+        $set: {
+          orderStatus,
+          ...(orderStatus === 'DELIVERED' ? { deliveredAt: new Date() } : {}),
+          // Cash on delivery is collected on delivery, so it counts as paid then.
+          ...(orderStatus === 'DELIVERED' && order.paymentMethod === 'COD'
+            ? { paymentStatus: 'PAID' }
+            : {}),
+        },
+        $push: { statusHistory: { status: orderStatus, at: new Date() } },
+      },
+      { new: true, runValidators: true }
     );
-  }
 
-  if (orderStatus === 'CANCELLED') {
-    // Combine duplicate product entries before restoring stock.
-    const quantities = new Map();
-
-    for (const item of order.items) {
-      const productId = String(item.product);
-
-      quantities.set(
-        productId,
-        (quantities.get(productId) || 0) + item.quantity
+    if (!updatedOrder) {
+      throw new Error(
+        'Order status changed by another request. Please refresh and try again.'
       );
     }
 
-    const restored = [];
+    return updatedOrder;
+  }
 
+  // Wallet orders are paid up front, so cancelling one means a refund.
+  const isWalletPaid =
+    order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID';
+
+  // Atomically claim cancellation and inventory release.
+  const cancelledOrder = await Order.findOneAndUpdate(
+    {
+      _id: orderId,
+      orderStatus: previousStatus,
+      paymentStatus: isWalletPaid ? 'PAID' : { $ne: 'PAID' },
+      inventoryReleased: false,
+    },
+    {
+      $set: {
+        orderStatus: 'CANCELLED',
+        inventoryReleased: true,
+        ...(isWalletPaid ? { paymentStatus: 'REFUNDED' } : {}),
+      },
+      $push: { statusHistory: { status: 'CANCELLED', at: new Date() } },
+    },
+    { new: true, runValidators: true }
+  );
+
+  if (!cancelledOrder) {
+    throw new Error(
+      'Order changed or its inventory was already released. Please refresh and check the order.'
+    );
+  }
+
+  // The coupon use goes back to the pool when the order is cancelled.
+  await releaseCouponUse(cancelledOrder.couponCode);
+
+  // Restore stock for the cancellation that claimed the release, colour and size by colour and size.
+  try {
+    for (const item of cancelledOrder.items) {
+      const restored = await restoreStock({
+        productId: String(item.product),
+        color: item.color,
+        size: item.size,
+        quantity: item.quantity,
+      });
+
+      if (!restored) {
+        throw new Error(`Product not found while restoring stock: ${String(item.product)}`);
+      }
+    }
+  } catch (error) {
+    console.error(
+      'CRITICAL: Inventory restoration failed for cancelled order:',
+      orderId,
+      error.message
+    );
+
+    throw new Error(
+      'Order was cancelled, but inventory restoration needs recovery. Check server logs before retrying.'
+    );
+  }
+
+  if (isWalletPaid) {
     try {
-      for (const [productId, quantity] of quantities) {
-        const result = await Product.updateOne(
-          { _id: productId },
-          { $inc: { stock: quantity } }
-        );
-
-        if (result.matchedCount !== 1) {
-          throw new Error(
-            `Product not found while restoring stock: ${productId}`
-          );
-        }
-
-        restored.push({ productId, quantity });
-      }
+      await wallet.credit({
+        userId: cancelledOrder.user,
+        amount: Math.round(cancelledOrder.totalAmount * 100),
+        source: 'REFUND',
+        reference: String(cancelledOrder._id),
+        description: 'Refund for cancelled order',
+      });
     } catch (error) {
-      // Undo any stock restoration already completed.
-      let stockRollbackFailed = false;
+      console.error(
+        'CRITICAL: Wallet refund failed for cancelled order:',
+        String(orderId),
+        error.message
+      );
 
-      for (const item of restored.reverse()) {
-        try {
-          const result = await Product.updateOne(
-            {
-              _id: item.productId,
-              stock: { $gte: item.quantity },
-            },
-            { $inc: { stock: -item.quantity } }
-          );
-
-          if (result.modifiedCount !== 1) {
-            stockRollbackFailed = true;
-          }
-        } catch (rollbackError) {
-          stockRollbackFailed = true;
-
-          console.error(
-            'CRITICAL: Stock rollback failed:',
-            item.productId,
-            rollbackError.message
-          );
-        }
-      }
-
-      if (!stockRollbackFailed) {
-        try {
-          const rollback = await Order.updateOne(
-            {
-              _id: orderId,
-              orderStatus: 'CANCELLED',
-            },
-            {
-              $set: { orderStatus: previousStatus },
-            }
-          );
-
-          if (rollback.modifiedCount !== 1) {
-            console.error(
-              'CRITICAL: Order status rollback failed:',
-              orderId
-            );
-          }
-        } catch (rollbackError) {
-          console.error(
-            'CRITICAL: Order status rollback failed:',
-            orderId,
-            rollbackError.message
-          );
-        }
-      } else {
-        console.error(
-          'CRITICAL: Manual inventory verification required for order:',
-          orderId
-        );
-      }
-
-      throw error;
+      throw new Error(
+        'Order was cancelled, but the wallet refund needs recovery. Check server logs before retrying.'
+      );
     }
   }
 
-  return updatedOrder;
+  return cancelledOrder;
+};
+
+// Fetches an order for its invoice. Customers can only open their own.
+const getInvoiceOrder = async (orderId, userId, role) => {
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    throw new Error('Invalid order ID');
+  }
+
+  const order = await Order.findById(orderId);
+
+  if (!order || (role !== 'admin' && String(order.user) !== String(userId))) {
+    throw new Error('Order not found');
+  }
+
+  if (order.orderStatus === 'CANCELLED') {
+    throw new Error('Invoices are not issued for cancelled orders');
+  }
+
+  return order;
+};
+
+// Admin: record courier and tracking number for a dispatched order.
+const setShipping = async (orderId, { courier, trackingNumber }) => {
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    throw new Error('Invalid order ID');
+  }
+
+  const cleanCourier = typeof courier === 'string' ? courier.trim().slice(0, 60) : '';
+  const cleanTracking =
+    typeof trackingNumber === 'string' ? trackingNumber.trim().slice(0, 60) : '';
+
+  if (!cleanTracking) {
+    throw new Error('Enter a tracking number');
+  }
+
+  const order = await Order.findById(orderId);
+
+  if (!order) {
+    throw new Error('Order not found');
+  }
+
+  if (!['PROCESSING', 'SHIPPED'].includes(order.orderStatus)) {
+    throw new Error(
+      'Shipping details can be added once the order is processing or shipped'
+    );
+  }
+
+  order.shipping = {
+    courier: cleanCourier,
+    trackingNumber: cleanTracking,
+    shippedAt: order.shipping?.shippedAt || new Date(),
+  };
+
+  await order.save();
+
+  return order;
 };
 
 module.exports = {
+  getInvoiceOrder,
+  setShipping,
   createOrder,
   createOnlinePaymentOrder,
   verifyRazorpayPayment,

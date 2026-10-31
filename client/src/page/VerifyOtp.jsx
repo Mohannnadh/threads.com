@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import '../styles/auth.css';
+import { API_BASE_URL } from '../config.js';
 
 const VerifyOtp = () => {
   const location = useLocation();
@@ -32,7 +33,7 @@ const VerifyOtp = () => {
 
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/verify-otp',
+        `${API_BASE_URL}/api/auth/verify-otp`,
         {
           method: 'POST',
           headers: {

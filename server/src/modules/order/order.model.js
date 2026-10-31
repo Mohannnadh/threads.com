@@ -1,6 +1,14 @@
 
 const mongoose = require('mongoose');
 
+const statusHistorySchema = new mongoose.Schema(
+  {
+    status: { type: String, required: true },
+    at: { type: Date, required: true },
+  },
+  { _id: false }
+);
+
 const orderItemSchema = new mongoose.Schema(
   {
     product: {
@@ -77,6 +85,18 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Coupon used on this order (code snapshot) and the rupees it saved.
+    couponCode: {
+      type: String,
+      default: null,
+    },
+
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     totalAmount: {
       type: Number,
       required: true,
@@ -85,7 +105,7 @@ const orderSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: ['COD', 'ONLINE'],
+      enum: ['COD', 'ONLINE', 'WALLET'],
       required: true,
     },
 
@@ -108,10 +128,33 @@ const orderSchema = new mongoose.Schema(
       default: false,
     },
 
+    inventoryReleaseStatus: {
+      type: String,
+      enum: ['NOT_RELEASED', 'RELEASING', 'RELEASED', 'FAILED'],
+      default: 'NOT_RELEASED',
+    },
+
     paymentStatus: {
       type: String,
-      enum: ['PENDING', 'PAID', 'FAILED'],
+      enum: ['PENDING', 'PAID', 'FAILED', 'REFUNDED'],
       default: 'PENDING',
+    },
+
+    // Timestamped status changes, shown as the order tracker.
+    statusHistory: {
+      type: [statusHistorySchema],
+      default: [],
+    },
+
+    deliveredAt: {
+      type: Date,
+      default: null,
+    },
+
+    shipping: {
+      courier: { type: String, trim: true, default: '' },
+      trackingNumber: { type: String, trim: true, default: '' },
+      shippedAt: { type: Date, default: null },
     },
 
     orderStatus: {

@@ -1,162 +1,386 @@
-
+import { confirmDialog, notifyDialog } from '../components/Dialog.jsx';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
-import { getMyOrders } from '../services/orderService.js';
+import { getMyOrdersPage } from '../services/orderService.js';
+import {
+  getMyReviews,
+  getMyReturns,
+  viewInvoice,
+  deleteReview,
+} from '../services/supportService.js';
+import Pagination from '../components/Pagination.jsx';
+import OrderTracker from '../components/OrderTracker.jsx';
+import ReviewForm from '../components/ReviewForm.jsx';
+import ReturnForm from '../components/ReturnForm.jsx';
+import '../styles/orders.css';
+
+const PAGE_SIZE = 10;
+const RETURN_WINDOW_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const RETURN_LABEL = {
+  REQUESTED: 'Requested',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  PICKED_UP: 'Picked up',
+  REFUNDED: 'Refunded to wallet',
+  COMPLETED: 'Exchange completed',
+};
+
+const PAYMENT_LABEL = {
+  WALLET: 'Wallet',
+  ONLINE: 'Online',
+  COD: 'Cash on delivery',
+};
+
+const formatDate = (date) =>
+  new Date(date).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+const formatRupees = (amount) => `₹${Number(amount).toLocaleString('en-IN')}`;
+
+// Lookup keys used for the review and return maps.
+const keyOf = (...parts) => parts.map(String).join(':');
 
 const MyOrders = () => {
   const { token } = useAuth();
 
   const [orders, setOrders] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Reviews keyed by orderId:productId, return requests by orderId:itemIndex.
+  const [reviews, setReviews] = useState({});
+  const [returns, setReturns] = useState({});
+
+  // Which inline form is open, e.g. "review:<orderId>:<index>".
+  const [openForm, setOpenForm] = useState('');
+  const [invoiceBusy, setInvoiceBusy] = useState('');
+  const [actionError, setActionError] = useState('');
+
+  // Loads the requested page of orders whenever the page or login changes.
   useEffect(() => {
+    if (!token) return undefined;
+
+    let active = true;
+
     const loadOrders = async () => {
       try {
-        setLoading(true);
-        setError('');
+        const result = await getMyOrdersPage(token, { page, limit: PAGE_SIZE });
 
-        const data = await getMyOrders(token);
-        setOrders(data);
+        if (!active) return;
+
+        // If the current page no longer exists, step back to the last page.
+        if (
+          result.orders.length === 0 &&
+          result.pagination.totalPages > 0 &&
+          page > result.pagination.totalPages
+        ) {
+          setPage(result.pagination.totalPages);
+          return;
+        }
+
+        setError('');
+        setOrders(result.orders);
+        setPagination(result.pagination);
       } catch (err) {
-        setError(err.message || 'Failed to load your orders.');
+        if (active) setError(err.message || 'Failed to load your orders.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
-    if (token) {
-      loadOrders();
-    } else {
-      setError('Please log in to view your orders.');
-      setLoading(false);
-    }
+    loadOrders();
+
+    return () => {
+      active = false;
+    };
+  }, [token, page]);
+
+  // Reviews and returns are secondary: if they fail, the page still works.
+  useEffect(() => {
+    if (!token) return undefined;
+
+    let active = true;
+
+    Promise.all([getMyReviews(token), getMyReturns(token)])
+      .then(([reviewData, returnData]) => {
+        if (!active) return;
+
+        setReviews(
+          Object.fromEntries(
+            (reviewData.reviews || []).map((review) => [
+              keyOf(review.order, review.product),
+              review,
+            ])
+          )
+        );
+
+        setReturns(
+          Object.fromEntries(
+            (returnData.requests || []).map((request) => [
+              keyOf(request.order, request.itemIndex),
+              request,
+            ])
+          )
+        );
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
   }, [token]);
 
-  const formatDate = (date) =>
-    new Date(date).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+  const handleInvoice = async (orderId) => {
+    setActionError('');
+    setInvoiceBusy(orderId);
+
+    // Open the tab now, so the browser does not block it after the request.
+    const tab = window.open('', '_blank');
+
+    try {
+      await viewInvoice(token, orderId, tab);
+    } catch (err) {
+      tab?.close();
+      setActionError(err.message);
+    } finally {
+      setInvoiceBusy('');
+    }
+  };
+
+  const handleDeleteReview = async (orderId, productId, review) => {
+    if (!(await confirmDialog({ message: 'Delete your review? This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
+
+    setActionError('');
+
+    try {
+      await deleteReview(token, review._id);
+      setReviews((current) => {
+        const next = { ...current };
+        delete next[keyOf(orderId, productId)];
+        return next;
+      });
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
+  const toggleForm = (name) => setOpenForm((current) => (current === name ? '' : name));
 
   if (loading) {
-    return <main style={{ padding: 60 }}>Loading your orders...</main>;
+    return <main className="ord-page">Loading your orders...</main>;
   }
 
   return (
-    <main
-      style={{
-        maxWidth: 1100,
-        margin: '0 auto',
-        padding: '60px 24px 100px',
-        color: '#111',
-      }}
-    >
-      <p
-        style={{
-          fontSize: 11,
-          letterSpacing: '0.15em',
-          color: '#777',
-        }}
-      >
-        YOUR ACCOUNT / ORDER HISTORY
-      </p>
-
-      <h1 style={{ fontSize: 42, fontWeight: 500 }}>
-        MY ORDERS
-      </h1>
+    <main className="ord-page">
+      <p className="ord-eyebrow">YOUR ACCOUNT / ORDER HISTORY</p>
+      <h1 className="ord-title">MY ORDERS</h1>
 
       {error && (
-        <p role="alert" style={{ color: '#b00020' }}>
+        <p role="alert" className="ord-error">
           {error}
         </p>
       )}
 
+      {actionError && (
+        <p role="alert" className="ord-error">
+          {actionError}
+        </p>
+      )}
+
       {!error && orders.length === 0 && (
-        <section style={{ padding: '40px 0' }}>
+        <section className="ord-empty">
           <h2>No orders yet.</h2>
-          <p style={{ color: '#666' }}>
-            Your orders will appear here after checkout.
-          </p>
+          <p>Your orders will appear here after checkout.</p>
           <Link to="/products">Explore products</Link>
         </section>
       )}
 
-      {orders.map((order) => (
-        <article
-          key={order._id}
-          style={{
-            border: '1px solid #ddd',
-            padding: 24,
-            marginTop: 24,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: 16,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div>
-              <p style={{ color: '#777', fontSize: 12 }}>
-                ORDER PLACED
-              </p>
-              <p>{formatDate(order.createdAt)}</p>
-            </div>
+      {orders.map((order) => {
+        const delivered = order.orderStatus === 'DELIVERED';
+        const windowEnds = order.deliveredAt
+          ? new Date(new Date(order.deliveredAt).getTime() + RETURN_WINDOW_DAYS * DAY_MS)
+          : null;
+        const withinWindow = Boolean(windowEnds) && Date.now() <= windowEnds.getTime();
 
-            <div>
-              <p style={{ color: '#777', fontSize: 12 }}>
-                ORDER STATUS
-              </p>
-              <strong>{order.orderStatus}</strong>
-            </div>
+        return (
+          <article key={order._id} className="ord-card">
+            <header className="ord-head">
+              <div>
+                <span className="ord-label">Order placed</span>
+                <span>{formatDate(order.createdAt)}</span>
+              </div>
+              <div>
+                <span className="ord-label">Order number</span>
+                <span>#{String(order._id).slice(-6).toUpperCase()}</span>
+              </div>
+              <div>
+                <span className="ord-label">Total</span>
+                <span>{formatRupees(order.totalAmount)}</span>
+              </div>
+              <div>
+                <span className="ord-label">Status</span>
+                <span className="ord-status">{order.orderStatus}</span>
+              </div>
+            </header>
 
-            <div>
-              <p style={{ color: '#777', fontSize: 12 }}>
-                TOTAL
-              </p>
-              <strong>
-                ₹{Number(order.totalAmount).toLocaleString('en-IN')}
-              </strong>
-            </div>
-          </div>
+            <OrderTracker order={order} />
 
-          <hr style={{ border: 0, borderTop: '1px solid #ddd' }} />
+            <ul className="ord-items">
+              {order.items.map((item, index) => {
+                const review = reviews[keyOf(order._id, item.product)];
+                const request = returns[keyOf(order._id, index)];
+                const canReview = delivered && !review;
+                const canReturn = delivered && withinWindow && !request;
+                const reviewOpen = openForm === `review:${order._id}:${index}`;
+                const returnOpen = openForm === `return:${order._id}:${index}`;
 
-          <h3>Items</h3>
+                return (
+                  <li key={`${item.product}-${index}`} className="ord-item">
+                    <div className="ord-item-main">
+                      <span className="ord-item-name">{item.name}</span>
+                      <span className="ord-item-meta">
+                        Qty {item.quantity}
+                        {item.size ? ` · Size ${item.size}` : ''}
+                        {item.color ? ` · ${item.color}` : ''}
+                      </span>
+                    </div>
 
-          {order.items.map((item, index) => (
-            <div
-              key={`${item.product}-${index}`}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: 16,
-                marginBottom: 12,
-              }}
-            >
-              <span>
-                {item.name} × {item.quantity}
-                {item.size && ` · Size ${item.size}`}
+                    <span className="ord-item-price">
+                      {formatRupees(Number(item.price) * Number(item.quantity))}
+                    </span>
+
+                    <div className="ord-item-actions">
+                      {review && (
+                        <>
+                          <span className="ord-tag">Reviewed · {review.rating}★</span>
+                          {!reviewOpen && (
+                            <button
+                              type="button"
+                              className="ord-btn"
+                              onClick={() => toggleForm(`review:${order._id}:${index}`)}
+                            >
+                              Edit review
+                            </button>
+                          )}
+                          {!reviewOpen && (
+                            <button
+                              type="button"
+                              className="ord-btn"
+                              onClick={() => handleDeleteReview(order._id, item.product, review)}
+                            >
+                              Delete review
+                            </button>
+                          )}
+                        </>
+                      )}
+
+                      {request && (
+                        <span className="ord-tag">
+                          {request.type === 'EXCHANGE' ? 'Exchange' : 'Return'} ·{' '}
+                          {RETURN_LABEL[request.status] || request.status}
+                        </span>
+                      )}
+
+                      {canReview && !reviewOpen && (
+                        <button
+                          type="button"
+                          className="ord-btn"
+                          onClick={() => toggleForm(`review:${order._id}:${index}`)}
+                        >
+                          Write a review
+                        </button>
+                      )}
+
+                      {canReturn && !returnOpen && (
+                        <button
+                          type="button"
+                          className="ord-btn"
+                          onClick={() => toggleForm(`return:${order._id}:${index}`)}
+                        >
+                          Return or exchange
+                        </button>
+                      )}
+                    </div>
+
+                    {reviewOpen && (
+                      <ReviewForm
+                        token={token}
+                        orderId={order._id}
+                        productId={item.product}
+                        productName={item.name}
+                        review={review}
+                        onCancel={() => setOpenForm('')}
+                        onSaved={(saved) => {
+                          setReviews((current) => ({
+                            ...current,
+                            [keyOf(order._id, item.product)]: saved,
+                          }));
+                          setOpenForm('');
+                        }}
+                      />
+                    )}
+
+                    {returnOpen && (
+                      <ReturnForm
+                        token={token}
+                        order={order}
+                        itemIndex={index}
+                        item={item}
+                        windowEnds={windowEnds}
+                        onCancel={() => setOpenForm('')}
+                        onSaved={(saved) => {
+                          setReturns((current) => ({
+                            ...current,
+                            [keyOf(order._id, index)]: saved,
+                          }));
+                          setOpenForm('');
+                        }}
+                      />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+
+            <footer className="ord-foot">
+              <span className="ord-muted">
+                Payment: {PAYMENT_LABEL[order.paymentMethod] || 'Cash on delivery'} ·{' '}
+                {order.paymentStatus}
               </span>
 
-              <span>
-                ₹{(
-                  Number(item.price) * Number(item.quantity)
-                ).toLocaleString('en-IN')}
-              </span>
-            </div>
-          ))}
+              {order.orderStatus !== 'CANCELLED' && (
+                <button
+                  type="button"
+                  className="ord-btn"
+                  onClick={() => handleInvoice(order._id)}
+                  disabled={invoiceBusy === order._id}
+                >
+                  {invoiceBusy === order._id ? 'Opening…' : 'View invoice'}
+                </button>
+              )}
+            </footer>
+          </article>
+        );
+      })}
 
-          <p style={{ color: '#666', fontSize: 13 }}>
-            Payment: {order.paymentMethod} · {order.paymentStatus}
-          </p>
-        </article>
-      ))}
+      <Pagination
+        pagination={pagination}
+        itemLabel="orders"
+        onPageChange={(next) => {
+          setLoading(true);
+          setOpenForm('');
+          setPage(next);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
     </main>
   );
 };

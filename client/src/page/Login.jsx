@@ -1,9 +1,12 @@
 
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { loginUser } from '../services/authService.js';
+import { loginUser, loginWithGoogle } from '../services/authService.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import '../styles/auth.css';
+import { Icon } from '../components/Icon.jsx';
+import { getSessionToken } from '../utils/session.js';
+import GoogleSignInButton from '../components/GoogleSignInButton.jsx';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -32,7 +35,7 @@ const Login = () => {
 
       login(data.token, data.user);
 
-      if (localStorage.getItem('token') !== data.token) {
+      if (getSessionToken() !== data.token) {
         throw new Error('Unable to save your login session.');
       }
 
@@ -43,6 +46,41 @@ const Login = () => {
       }
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleCredential = async (credential, googleError) => {
+    if (googleError) {
+      setError(googleError.message);
+      return;
+    }
+
+    if (!credential) {
+      setError('Google sign-in did not return a credential. Please try again.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const data = await loginWithGoogle(credential);
+
+      if (!data?.token) {
+        throw new Error('Authentication token was not received.');
+      }
+
+      login(data.token, data.user);
+
+      if (getSessionToken() !== data.token) {
+        throw new Error('Unable to save your login session.');
+      }
+
+      navigate('/home', { replace: true });
+    } catch (err) {
+      setError(err.message || 'Google sign-in failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -114,7 +152,7 @@ const Login = () => {
                 aria-pressed={showPassword}
                 disabled={loading}
               >
-                {showPassword ?  '👁':'︶'}
+                {showPassword ? <Icon name="eyeOff" /> : <Icon name="eye" />}
               </button>
             </div>
           </div>
@@ -134,10 +172,25 @@ const Login = () => {
           </button>
         </form>
 
+        <div className="auth-divider" aria-hidden="true">
+          <span>OR CONTINUE WITH</span>
+        </div>
+        <GoogleSignInButton
+          onCredential={handleGoogleCredential}
+          disabled={loading}
+        />
+
         <p className="auth-switch">
           New to Threads.com?{' '}
           <Link to="/register" className="auth-text-link">
             Create an account
+          </Link>
+        </p>
+
+        <p className="auth-switch">
+          Store staff?{' '}
+          <Link to="/admin/login" className="auth-text-link">
+            Admin sign in
           </Link>
         </p>
 

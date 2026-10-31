@@ -30,19 +30,92 @@ const getProfile = async (req, res) => {
 
 const updateProfile = async (req, res) => {
   try {
-    const { name, email } = req.body;
+    const { firstName, lastName, gender, dateOfBirth, email } = req.body;
 
+    // The admin display name is fixed as ThreadsAdmin.
+    if (req.user.role === 'admin' && (firstName !== undefined || lastName !== undefined)) {
+      return res.status(400).json({
+        success: false,
+        message: 'The admin name is fixed and cannot be changed',
+      });
+    }
+    
     const updates = {};
 
-    if (name !== undefined) {
-      if (typeof name !== 'string' || !name.trim()) {
+    if (firstName !== undefined) {
+      if (typeof firstName !== 'string' || !firstName.trim()) {
         return res.status(400).json({
           success: false,
-          message: 'Name cannot be empty',
+          message: 'First name cannot be empty',
         });
       }
 
-      updates.name = name.trim();
+      updates.firstName = firstName.trim();
+    }
+
+    if (lastName !== undefined) {
+      if (typeof lastName !== 'string' || !lastName.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Last name cannot be empty',
+        });
+      }
+
+      updates.lastName = lastName.trim();
+    }
+
+    if (updates.firstName !== undefined || updates.lastName !== undefined) {
+      const currentUser = await User.findById(req.user.userId).select(
+        'firstName lastName name'
+      );
+
+      if (!currentUser) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      const finalFirstName =
+        updates.firstName ?? currentUser.firstName ?? '';
+      const finalLastName =
+        updates.lastName ?? currentUser.lastName ?? '';
+
+      updates.name = `${finalFirstName} ${finalLastName}`.trim();
+    }
+
+   if (gender !== undefined) {
+  if (
+    typeof gender !== 'string' ||
+    !['male', 'female', 'other', ''].includes(gender)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid gender value',
+    });
+  }
+
+  updates.gender = gender;
+}
+
+    if (dateOfBirth !== undefined) {
+      if (dateOfBirth === null || dateOfBirth === '') {
+        updates.dateOfBirth = null;
+      } else {
+        const parsedDate = new Date(dateOfBirth);
+
+        if (
+          Number.isNaN(parsedDate.getTime()) ||
+          parsedDate > new Date()
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide a valid date of birth',
+          });
+        }
+
+        updates.dateOfBirth = parsedDate;
+      }
     }
 
     if (email !== undefined) {
@@ -54,6 +127,15 @@ const updateProfile = async (req, res) => {
       }
 
       const normalizedEmail = email.trim().toLowerCase();
+
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (!emailPattern.test(normalizedEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid email address',
+        });
+      }
 
       const existingUser = await User.findOne({
         email: normalizedEmail,
@@ -73,14 +155,14 @@ const updateProfile = async (req, res) => {
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Provide a name or email to update',
+        message: 'Provide profile fields to update',
       });
     }
 
     const user = await User.findByIdAndUpdate(
       req.user.userId,
       { $set: updates },
-      { returnDocument: 'after', runValidators: true }
+      { new: true, runValidators: true }
     ).select('-password -otp -otpExpiresAt -otpVerified');
 
     if (!user) {
@@ -112,7 +194,33 @@ const updateProfile = async (req, res) => {
   }
 };
 
+const deleteProfile = async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile deleted successfully',
+    });
+  } catch (error) {
+    console.error('Delete profile error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete profile',
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
+  deleteProfile,
 };

@@ -1,12 +1,21 @@
 
 const {
+  parsePagination,
+  buildPagination,
+  cleanSearch,
+} = require('../../utils/pagination');
+
+const {
   createOrder,
   createOnlinePaymentOrder,
   verifyRazorpayPayment,
   getMyOrders,
   getAllOrders,
   updateOrderStatus,
+  getInvoiceOrder,
+  setShipping,
 } = require('./order.service');
+const { buildInvoiceHtml } = require('./invoice');
 
 
 // Customer: place an order
@@ -74,16 +83,21 @@ const verifyRazorpayPaymentController = async (req, res) => {
   }
 };
 
-// Customer: get their own orders
+// Customer: get their own orders (paginated)
 const getMyOrdersController = async (req, res) => {
   try {
     const userId = req.user.userId;
+    const pagination = parsePagination(req.query, {
+      defaultLimit: 10,
+      maxLimit: 50,
+    });
 
-    const orders = await getMyOrders(userId);
+    const { orders, total } = await getMyOrders(userId, pagination);
 
     return res.status(200).json({
       success: true,
       orders,
+      pagination: buildPagination(total, pagination),
     });
   } catch (error) {
     return res.status(500).json({
@@ -93,15 +107,25 @@ const getMyOrdersController = async (req, res) => {
   }
 };
 
-// Admin: get all customer orders
+// Admin: get customer orders (paginated, filterable by status and search)
 const getAllOrdersController = async (req, res) => {
   try {
-    const orders = await getAllOrders();
+    const pagination = parsePagination(req.query, {
+      defaultLimit: 15,
+      maxLimit: 50,
+    });
+
+    const { orders, total, counts } = await getAllOrders({
+      ...pagination,
+      status: typeof req.query.status === 'string' ? req.query.status : '',
+      search: cleanSearch(req.query.search),
+    });
 
     return res.status(200).json({
       success: true,
-      count: orders.length,
       orders,
+      counts,
+      pagination: buildPagination(total, pagination),
     });
   } catch (error) {
     return res.status(500).json({
@@ -155,7 +179,53 @@ const updateOrderStatusController = async (req, res) => {
 };
 
 
+// Customer or admin: download an order's invoice as an HTML file.
+const getInvoiceController = async (req, res) => {
+  try {
+    const order = await getInvoiceOrder(
+      req.params.id,
+      req.user.userId,
+      req.user.role
+    );
+
+    const fileNo = String(order._id).slice(-6).toUpperCase();
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `${req.query.view === '1' ? 'inline' : 'attachment'}; filename="invoice-${fileNo}.html"`
+    );
+
+    return res.status(200).send(buildInvoiceHtml(order));
+  } catch (error) {
+    return res.status(error.message === 'Order not found' ? 404 : 400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Admin: save courier and tracking number.
+const setShippingController = async (req, res) => {
+  try {
+    const order = await setShipping(req.params.id, req.body || {});
+
+    return res.status(200).json({
+      success: true,
+      message: 'Shipping details saved',
+      order,
+    });
+  } catch (error) {
+    return res.status(error.message === 'Order not found' ? 404 : 400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
+  getInvoiceController,
+  setShippingController,
   createOrderController,
   createRazorpayOrderController,
   verifyRazorpayPaymentController,

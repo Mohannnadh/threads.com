@@ -1,6 +1,8 @@
 
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext.jsx';
+import { Icon } from '../components/Icon.jsx';
 
 const Cart = () => {
   const {
@@ -8,7 +10,26 @@ const Cart = () => {
     removeFromCart,
     updateQuantity,
     cartTotal,
+    refreshCart,
+    syncMessage,
+    clearSyncMessage,
   } = useCart();
+
+  // Check the cart against the store each time the page opens.
+  useEffect(() => {
+    refreshCart();
+  }, [refreshCart]);
+
+  const hasUnavailableItems = cartItems.some((item) => {
+    const stock = Number(item.stock);
+
+    return (
+      !Number.isFinite(stock) ||
+      stock <= 0 ||
+      !Number.isFinite(Number(item.quantity)) ||
+      Number(item.quantity) < 1
+    );
+  });
 
   console.log('Cart page items:', cartItems);
   console.log(
@@ -74,6 +95,46 @@ const Cart = () => {
         color: '#111',
       }}
     >
+      {cartItems.some((item) => item.stock <= 0 || item.quantity > item.stock) && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: '20px',
+            padding: '12px 16px',
+            backgroundColor: '#fdecea',
+            border: '1px solid #f1b0b7',
+            color: '#b42318',
+            fontSize: '13px',
+          }}
+        >
+          Some products are not available. Remove them or lower the quantity to continue to checkout.
+        </div>
+      )}
+
+      {syncMessage && (
+        <div
+          role="status"
+          style={{
+            marginBottom: '20px',
+            padding: '12px 16px',
+            backgroundColor: '#fff4e5',
+            border: '1px solid #f0c27b',
+            fontSize: '13px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <span>{syncMessage}</span>
+          <button
+            type="button"
+            onClick={clearSyncMessage}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <p
         style={{
           fontSize: '10px',
@@ -97,7 +158,10 @@ const Cart = () => {
       </h1>
 
       <p style={{ color: '#666', marginBottom: '40px' }}>
-        {cartItems.reduce((total, item) => total + item.quantity, 0)} items
+        {cartItems.reduce(
+          (total, item) => total + Math.max(0, Number(item.quantity) || 0),
+          0
+        )} items
       </p>
 
       <div
@@ -111,7 +175,7 @@ const Cart = () => {
         <section>
           {cartItems.map((item) => (
             <article
-              key={`${item._id}-${item.size}`}
+              key={`${item._id}-${item.size}-${item.color || ''}`}
               style={{
                 display: 'grid',
                 gridTemplateColumns: '120px minmax(0, 1fr)',
@@ -126,7 +190,7 @@ const Cart = () => {
                     (image) =>
                       typeof image === 'string' &&
                       image.trim() !== '' &&
-                      /^https?:\/\//i.test(image)
+                      /^https?:\/\/\S+$/i.test(image.trim())
                   ) || ''
                 }
                 alt={item.name || 'Product image'}
@@ -154,7 +218,22 @@ const Cart = () => {
 
                 <p style={{ fontSize: '13px', color: '#666' }}>
                   Size: {item.size}
+                  {item.color ? ` · Color: ${item.color}` : ''}
                 </p>
+
+                {item.stock <= 0 ? (
+                  <p style={{ fontSize: '12px', fontWeight: 600, color: '#b42318', margin: '4px 0 0' }}>
+                    Out of stock. Product is not available.
+                  </p>
+                ) : item.quantity > item.stock ? (
+                  <p style={{ fontSize: '12px', fontWeight: 600, color: '#b42318', margin: '4px 0 0' }}>
+                    Only {item.stock} left. Lower the quantity to continue.
+                  </p>
+                ) : item.stock <= 3 ? (
+                  <p style={{ fontSize: '12px', color: '#b26a00', margin: '4px 0 0' }}>
+                    Only {item.stock} left
+                  </p>
+                ) : null}
 
                 <p style={{ fontSize: '14px' }}>
                   ₹{item.price}
@@ -176,7 +255,8 @@ const Cart = () => {
                       updateQuantity(
                         item._id,
                         item.size,
-                        item.quantity - 1
+                        item.quantity - 1,
+                        item.color || ''
                       )
                     }
                     style={{
@@ -200,7 +280,8 @@ const Cart = () => {
                       updateQuantity(
                         item._id,
                         item.size,
-                        item.quantity + 1
+                        item.quantity + 1,
+                        item.color || ''
                       )
                     }
                     style={{
@@ -217,7 +298,7 @@ const Cart = () => {
 
                 <button
                   type="button"
-                  onClick={() => removeFromCart(item._id, item.size)}
+                  onClick={() => removeFromCart(item._id, item.size, item.color || '')}
                   style={{
                     marginTop: '18px',
                     padding: 0,
@@ -244,7 +325,7 @@ const Cart = () => {
               fontSize: '12px',
             }}
           >
-            ← Continue shopping
+            <Icon name="arrowLeft" size={14} /> Continue shopping
           </Link>
         </section>
 
@@ -283,22 +364,57 @@ const Cart = () => {
           >
             Shipping and any applicable taxes will be calculated at checkout.
           </p>
-          <Link
-            to="/checkout"
-            style={{
-              display: 'block',
-              marginTop: '24px',
-              padding: '16px',
-              backgroundColor: '#111',
-              color: '#fff',
-              textAlign: 'center',
-              textDecoration: 'none',
-              fontSize: '12px',
-              letterSpacing: '0.1em',
-            }}
-          >
-            PROCEED TO CHECKOUT
-          </Link>
+          {hasUnavailableItems ? (
+            <div>
+              <button
+                type="button"
+                disabled
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: '24px',
+                  padding: '16px',
+                  border: 'none',
+                  backgroundColor: '#999',
+                  color: '#fff',
+                  fontSize: '12px',
+                  letterSpacing: '0.1em',
+                  cursor: 'not-allowed',
+                }}
+              >
+                CHECKOUT UNAVAILABLE
+              </button>
+
+              <p
+                role="alert"
+                style={{
+                  marginTop: '12px',
+                  fontSize: '12px',
+                  lineHeight: '1.6',
+                  color: '#b42318',
+                }}
+              >
+                One or more items are unavailable. Remove them from your cart to continue.
+              </p>
+            </div>
+          ) : (
+            <Link
+              to="/checkout"
+              style={{
+                display: 'block',
+                marginTop: '24px',
+                padding: '16px',
+                backgroundColor: '#111',
+                color: '#fff',
+                textAlign: 'center',
+                textDecoration: 'none',
+                fontSize: '12px',
+                letterSpacing: '0.1em',
+              }}
+            >
+              PROCEED TO CHECKOUT
+            </Link>
+          )}
         </aside>
       </div>
     </main>

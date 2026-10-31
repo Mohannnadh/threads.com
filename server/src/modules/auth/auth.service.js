@@ -5,6 +5,8 @@ const { generateOtp, getOtpExpiry } = require('../../utils/otp');
 const { sendOtpEmail } = require('../../utils/email');
 
 
+const MAX_OTP_ATTEMPTS = 5;
+
 const registerUser = async ({ name, email, password }) => {
   // 1. Check if email already exists
   const existingUser = await User.findOne({ email });
@@ -46,6 +48,11 @@ const loginUser = async ({ email, password }) => {
     throw new Error('Invalid email or password');
   }
 
+  // Checked after the password, so a blocked account is not revealed to anyone else.
+  if (user.isBlocked) {
+    throw new Error('This account has been blocked. Please contact the store.');
+  }
+
   // 3. Generate JWTF
   const token = generateToken(user);
 
@@ -63,7 +70,6 @@ const loginUser = async ({ email, password }) => {
 const forgotPassword = async (email) => {
 
   try {
-    console.log("mail =>", email)
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -76,6 +82,7 @@ const forgotPassword = async (email) => {
     user.otp = otp;
     user.otpExpiresAt = otpExpiresAt;
     user.otpVerified = false;
+    user.otpAttempts = 0;
 
     await user.save();
 
@@ -102,15 +109,22 @@ const verifyOtp = async (email, otp) => {
     throw new Error('Invalid OTP');
   }
 
-  if (user.otp !== otp) {
-    throw new Error('Invalid OTP');
-  }
-
   if (user.otpExpiresAt < new Date()) {
     throw new Error('OTP has expired');
   }
 
+  if (user.otpAttempts >= MAX_OTP_ATTEMPTS) {
+    throw new Error('Too many incorrect attempts. Please request a new OTP.');
+  }
+
+  if (user.otp !== otp) {
+    user.otpAttempts = (user.otpAttempts || 0) + 1;
+    await user.save();
+    throw new Error('Invalid OTP');
+  }
+
   user.otpVerified = true;
+  user.otpAttempts = 0;
 
   await user.save();
 
@@ -142,6 +156,18 @@ const resetPassword = async (email, newPassword) => {
   return {
     email: user.email,
   };
+};
+
+// Same credential check as loginUser, but only accounts with the admin role
+// receive a token.
+const loginAdmin = async ({ email, password }) => {
+  const result = await loginUser({ email, password });
+
+  if (result.user.role !== 'admin') {
+    throw new Error('This account does not have admin access');
+  }
+
+  return result;
 };
 
 const changePassword = async (userId, currentPassword, newPassword) => {
@@ -178,6 +204,7 @@ const changePassword = async (userId, currentPassword, newPassword) => {
 module.exports = {
   registerUser,
   loginUser,
+  loginAdmin,
   forgotPassword,
   verifyOtp,
   resetPassword,

@@ -70,6 +70,46 @@
   flex-shrink: 0;
 }
 
+/* Profile dropdown container */
+.profile-menu {
+  position: relative;
+}
+
+/* Profile dropdown panel */
+.profile-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 180px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+}
+
+/* Each dropdown item occupies its own line */
+.profile-dropdown button {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Hover effect */
+.profile-dropdown button:hover {
+  background: #f3f3f3;
+}
+
+
 .mobile-menu-toggle {
   display: none;
 }
@@ -156,4 +196,93 @@
     min-height: 36px;
     font-size: 10px;
   }
+}
+
+/* Cart and wishlist icons with count badges */
+.header-actions .header-icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  color: #111;
+}
+
+.header-actions .header-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #111;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 17px;
+  letter-spacing: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Categories dropdown in the main navigation */
+.nav-dropdown {
+  position: relative;
+}
+
+.nav-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 10px 0;
+  background: #fff;
+  border: 1px solid #111;
+}
+
+.nav-dropdown-menu button {
+  display: block;
+  width: 100%;
+  padding: 9px 18px;
+  border: 0;
+  background: transparent;
+  color: #111;
+  font-size: 11px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.nav-dropdown-menu button:hover {
+  background: #111;
+  color: #fff;
+  opacity: 1;
+}
+
+.nav-dropdown-group {
+  padding: 6px 18px 2px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #777;
+}
+
+.nav-dropdown-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: #e5e5e5;
+}
+
+.nav-dropdown-empty {
+  padding: 9px 18px;
+  font-size: 12px;
+  color: #777;
 }

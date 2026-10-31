@@ -1,5 +1,27 @@
 
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import ProductCard from '../components/ProductCard.jsx';
+import { getProducts } from '../services/productService.js';
+
 const Home = () => {
+  // Products the admin has marked as featured.
+  const [featured, setFeatured] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+
+    getProducts({ limit: 4, featured: 'true' })
+      .then((data) => {
+        if (active) setFeatured(data.products || []);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <div
       style={{
@@ -88,6 +110,26 @@ const Home = () => {
             </button>
           </div>
         </section>
+
+        {featured.length > 0 && (
+          <section style={{ padding: '0 32px 80px', maxWidth: '1200px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 500 }}>Featured</h2>
+              <Link
+                to="/products?featured=1"
+                style={{ fontSize: '12px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#111' }}
+              >
+                View all
+              </Link>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '24px' }}>
+              {featured.map((product) => (
+                <ProductCard key={product._id} product={product} />
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Intro */}
         <section

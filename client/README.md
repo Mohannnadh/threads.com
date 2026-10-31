@@ -1,16 +1,16 @@
-# React + Vite
+# Threads.com: client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite storefront. See the [root README](../README.md) for full setup.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev       # development server on http://localhost:5173
+npm run build     # production build in dist/
+npm run preview   # serve the production build locally
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+API base URL comes from `VITE_API_URL` (defaults to `http://localhost:5000`). Set it in `client/.env` before building for another environment.
 
-## React Compiler
+Google sign-in requires `VITE_GOOGLE_CLIENT_ID` in the client environment and the matching `GOOGLE_CLIENT_ID` in the server environment. Configure the same OAuth 2.0 web client ID in both places and allow the client origin in Google Cloud's authorized JavaScript origins.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The Vite dev and preview servers set `Cross-Origin-Opener-Policy: same-origin-allow-popups` for Google popup sign-in. If the deployed web host applies a stricter COOP policy, configure the same header there.

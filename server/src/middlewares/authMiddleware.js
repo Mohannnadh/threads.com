@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const User = require('../modules/user/user.model');
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
@@ -13,12 +14,21 @@ const authMiddleware = (req, res, next) => {
 
     const token = authHeader.split(' ')[1];
 
-   console.log('JWT secret loaded in server:', Boolean(process.env.JWT_SECRET));
-console.log('JWT secret length in server:', process.env.JWT_SECRET?.length || 0);
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
 
-const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // A blocked or deleted account loses access straight away, even with a valid token.
+    const account = await User.findById(req.user.userId).select('isBlocked').lean();
 
-    req.user = decoded;
+    if (!account) {
+      return res.status(401).json({ success: false, message: 'Account not found' });
+    }
+
+    if (account.isBlocked) {
+      return res.status(403).json({
+        success: false,
+        message: 'This account has been blocked. Please contact the store.',
+      });
+    }
 
     next();
   } catch (error) {

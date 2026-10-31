@@ -183,26 +183,52 @@
   }
 }
 
+/* =========================
+   PROFILE PAGE
+========================= */
+
 .profile-page {
-  max-width: 600px;
-  margin: 50px auto;
+  width: 100%;
+  max-width: 760px;
+  margin: 40px auto;
   padding: 24px;
+  color: #171717;
 }
 
 .profile-card {
-  padding: 30px;
-  border: 1px solid #e5e5e5;
-  border-radius: 10px;
+  padding: 32px;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
   background: #fff;
+  box-shadow: 0 4px 18px rgb(0 0 0 / 4%);
 }
 
 .profile-card h1 {
-  margin-bottom: 8px;
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
 }
 
 .profile-card > p {
   color: #666;
+  margin: 0 0 28px;
+  line-height: 1.6;
+}
+
+.profile-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 24px;
+}
+
+.profile-heading h2,
+.change-password-section h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 650;
 }
 
 .profile-field {
@@ -213,24 +239,62 @@
 }
 
 .profile-field label {
+  font-size: 14px;
   font-weight: 600;
+  color: #333;
 }
 
-.profile-field input {
-  padding: 12px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 16px;
+.profile-field input,
+.profile-field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid #d5d5d5;
+  border-radius: 7px;
+  background: #fff;
+  color: #171717;
+  font: inherit;
+  font-size: 15px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.profile-field input:focus,
+.profile-field select:focus {
+  outline: none;
+  border-color: #171717;
+  box-shadow: 0 0 0 3px rgb(0 0 0 / 7%);
+}
+
+.profile-field input:disabled,
+.profile-field select:disabled {
+  background: #f7f7f7;
+  color: #555;
+  cursor: not-allowed;
+  border-color: #e5e5e5;
 }
 
 .profile-card button {
-  width: 100%;
-  padding: 12px;
-  border: none;
-  border-radius: 6px;
-  background: #111;
+  min-height: 44px;
+  padding: 11px 18px;
+  border: 1px solid #171717;
+  border-radius: 7px;
+  background: #171717;
   color: #fff;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.profile-card button:hover:not(:disabled) {
+  background: #333;
+  border-color: #333;
+}
+
+.profile-card button:focus-visible {
+  outline: 3px solid #aaa;
+  outline-offset: 3px;
 }
 
 .profile-card button:disabled {
@@ -238,12 +302,103 @@
   cursor: not-allowed;
 }
 
+.profile-heading button {
+  width: auto;
+  min-width: 84px;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.profile-actions button {
+  flex: 1;
+}
+
+.profile-actions button[type="button"] {
+  background: #fff;
+  color: #171717;
+  border-color: #d5d5d5;
+}
+
+.profile-actions button[type="button"]:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #aaa;
+}
+
+/* =========================
+   CHANGE PASSWORD
+========================= */
+
+.change-password-section {
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid #e8e8e8;
+}
+
+.change-password-section > p {
+  margin: 10px 0 24px;
+  color: #666;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* =========================
+   FEEDBACK MESSAGES
+========================= */
+
+.profile-error,
+.profile-success {
+  padding: 12px 14px;
+  border-radius: 7px;
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .profile-error {
   color: #b42318;
-  margin-bottom: 16px;
+  background: #fef3f2;
+  border: 1px solid #fecdca;
 }
 
 .profile-success {
   color: #16703c;
-  margin-bottom: 16px;
+  background: #ecfdf3;
+  border: 1px solid #abefc6;
+}
+
+/* =========================
+   RESPONSIVE LAYOUT
+========================= */
+
+@media (max-width: 600px) {
+  .profile-page {
+    margin: 20px auto;
+    padding: 14px;
+  }
+
+  .profile-card {
+    padding: 22px 18px;
+    border-radius: 10px;
+  }
+
+  .profile-card h1 {
+    font-size: 24px;
+  }
+
+  .profile-heading h2,
+  .change-password-section h2 {
+    font-size: 17px;
+  }
+
+  .profile-actions {
+    flex-direction: column;
+  }
+
+  .profile-actions button {
+    width: 100%;
+  }
 }

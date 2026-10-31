@@ -1,0 +1,84 @@
+/* Category tiles: black and white, matching the rest of the shop. */
+
+.cat-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 56px 16px 100px;
+  color: #111;
+}
+
+.cat-eyebrow {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: #777;
+}
+
+.cat-title {
+  margin: 10px 0 36px;
+  font-size: clamp(40px, 6vw, 80px);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  font-weight: 500;
+}
+
+.cat-note,
+.cat-error {
+  font-size: 14px;
+  color: #666;
+}
+
+.cat-error {
+  color: #b00020;
+}
+
+.cat-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.cat-tile {
+  display: block;
+  color: #111;
+  text-decoration: none;
+}
+
+.cat-tile:hover .cat-image {
+  opacity: 0.85;
+}
+
+.cat-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 3 / 4;
+  background: #f2f2f2 center / cover no-repeat;
+  border: 1px solid #111;
+  transition: opacity 0.2s ease;
+}
+
+.cat-placeholder {
+  font-size: 64px;
+  font-weight: 300;
+  color: #bbb;
+}
+
+.cat-name {
+  display: block;
+  margin-top: 12px;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.cat-count {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #777;
+}

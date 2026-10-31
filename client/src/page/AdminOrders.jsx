@@ -1,356 +1,506 @@
-
+import { confirmDialog, notifyDialog } from '../components/Dialog.jsx';
 import { useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
 import {
-  getAllOrders,
+  getOrdersPage,
   updateOrderStatus,
-} from '../services/adminService';
+} from '../services/adminService.js';
+import Pagination from '../components/Pagination.jsx';
+import useDebouncedValue from '../hooks/useDebouncedValue.js';
+import AdminLayout, {
+  Notice,
+  StatusPill,
+} from '../components/AdminLayout.jsx';
+import { Icon } from '../components/Icon.jsx';
+import { setOrderShipping } from '../services/supportService.js';
+import {
+  ACTION_LABEL,
+  STATUS_ORDER,
+  availableActions,
+  formatCurrency,
+  formatDate,
+  orderNumber,
+  statusLabel,
+} from '../utils/adminFormat.js';
 import '../styles/admin.css';
 
-const ORDER_STATUSES = [
-  'PLACED',
-  'CONFIRMED',
-  'PROCESSING',
-  'SHIPPED',
-  'DELIVERED',
-  'CANCELLED',
-];
+// Courier and tracking details. Shown while an order is being packed or shipped.
+const ShippingForm = ({ order, onSave }) => {
+  const [courier, setCourier] = useState(order.shipping?.courier || '');
+  const [trackingNumber, setTrackingNumber] = useState(order.shipping?.trackingNumber || '');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
-const NEXT_STATUSES = {
-  PLACED: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PROCESSING', 'CANCELLED'],
-  PROCESSING: ['SHIPPED', 'CANCELLED'],
-  SHIPPED: ['DELIVERED'],
-  DELIVERED: [],
-  CANCELLED: [],
-};
+  const submit = async (event) => {
+    event.preventDefault();
+    setFormError('');
 
-const formatCurrency = (amount) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(Number(amount) || 0);
-
-const formatDate = (date) => {
-  if (!date) return 'N/A';
-
-  return new Date(date).toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
-function AdminOrders() {
-  const { token } = useAuth();
-
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [updatingId, setUpdatingId] = useState(null);
-
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [search, setSearch] = useState('');
-  const [selectedOrder, setSelectedOrder] = useState(null);
-
-  useEffect(() => {
-    const loadOrders = async () => {
-      try {
-        setLoading(true);
-        setError('');
-
-        const result = await getAllOrders(token);
-        setOrders(Array.isArray(result) ? result : []);
-      } catch (err) {
-        setError(err.message || 'Failed to load orders.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (token) {
-      loadOrders();
-    } else {
-      setLoading(false);
-      setError('Please log in as an administrator.');
+    if (!trackingNumber.trim()) {
+      setFormError('Enter a tracking number.');
+      return;
     }
-  }, [token]);
 
-  const handleStatusChange = async (orderId, newStatus) => {
+    setSaving(true);
+
     try {
-      setUpdatingId(orderId);
-      setError('');
-
-      // Argument order must match adminService.js:
-      // token, orderId, orderStatus
-      const updatedOrder = await updateOrderStatus(
-        token,
-        orderId,
-        newStatus
-      );
-
-      setOrders((previousOrders) =>
-        previousOrders.map((order) =>
-          order._id === orderId
-            ? { ...order, ...updatedOrder }
-            : order
-        )
-      );
-
-      setSelectedOrder((previousOrder) =>
-        previousOrder?._id === orderId
-          ? { ...previousOrder, ...updatedOrder }
-          : previousOrder
-      );
+      await onSave({
+        courier: courier.trim(),
+        trackingNumber: trackingNumber.trim(),
+      });
     } catch (err) {
-      setError(err.message || 'Failed to update order status.');
+      setFormError(err.message || 'Could not save shipping details.');
     } finally {
-      setUpdatingId(null);
+      setSaving(false);
     }
   };
 
+  return (
+    <form className="admin-form-grid" onSubmit={submit}>
+      <label className="admin-field">
+        <span>Courier</span>
+        <input
+          type="text"
+          maxLength={80}
+          value={courier}
+          placeholder="e.g. Delhivery"
+          onChange={(event) => setCourier(event.target.value)}
+        />
+      </label>
 
-  const filteredOrders = orders.filter((order) => {
-    const matchesStatus =
-      statusFilter === 'ALL' ||
-      order.orderStatus === statusFilter;
+      <label className="admin-field">
+        <span>Tracking number</span>
+        <input
+          type="text"
+          maxLength={100}
+          value={trackingNumber}
+          onChange={(event) => setTrackingNumber(event.target.value)}
+        />
+      </label>
 
-    const searchText = search.trim().toLowerCase();
+      {formError && (
+        <p className="admin-field-full" role="alert" style={{ color: '#b00020', margin: 0 }}>
+          {formError}
+        </p>
+      )}
 
-    const customerName =
-      order.shippingAddress?.name ||
-      order.user?.name ||
-      '';
+      <div className="admin-form-actions admin-field-full">
+        <button
+          type="submit"
+          className="admin-button admin-button-primary"
+          disabled={saving}
+        >
+          {saving ? 'Saving…' : 'Save shipping details'}
+        </button>
+      </div>
+    </form>
+  );
+};
 
-    const customerEmail = order.user?.email || '';
+const PAGE_SIZE = 15;
 
-    const matchesSearch =
-      !searchText ||
-      order._id?.toLowerCase().includes(searchText) ||
-      customerName.toLowerCase().includes(searchText) ||
-      customerEmail.toLowerCase().includes(searchText) ||
-      order.orderStatus?.toLowerCase().includes(searchText);
+const AdminOrders = () => {
+  const { token } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-    return matchesStatus && matchesSearch;
-  });
+  const [orders, setOrders] = useState([]);
+  const [counts, setCounts] = useState({ ALL: 0 });
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
+  const [selectedId, setSelectedId] = useState(
+    searchParams.get('open') || null
+  );
+
+  // Bumping this reloads the current page (after a status change).
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Load one page of orders whenever the page, filter, search or refresh key changes.
+  useEffect(() => {
+    if (!token) return undefined;
+
+    let active = true;
+
+    const load = async () => {
+      try {
+        const result = await getOrdersPage(token, {
+          page,
+          limit: PAGE_SIZE,
+          status: statusFilter,
+          search: debouncedSearch,
+        });
+
+        if (!active) return;
+
+        // If the current page no longer exists, step back to the last page.
+        if (result.orders.length === 0 && result.pagination.totalPages > 0 && page > result.pagination.totalPages) {
+          setPage(result.pagination.totalPages);
+          return;
+        }
+
+        setError('');
+        setOrders(result.orders);
+        setCounts(result.counts);
+        setPagination(result.pagination);
+      } catch (err) {
+        if (active) setError(err.message || 'Failed to load orders.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [token, page, statusFilter, debouncedSearch, refreshKey]);
+
+  // Reload from an event handler (sets loading first).
+  const reloadOrders = () => {
+    setLoading(true);
+    setRefreshKey((key) => key + 1);
+  };
+
+  // Escape closes the detail drawer.
+  useEffect(() => {
+    if (!selectedId) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closeDrawer();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // closeDrawer is stable for this purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  const selectedOrder =
+    orders.find((order) => order._id === selectedId) || null;
+
+  const openOrder = (id) => {
+    setSelectedId(id);
+    setSearchParams(id ? { open: id } : {}, { replace: true });
+  };
+
+  function closeDrawer() {
+    setSelectedId(null);
+    setSearchParams({}, { replace: true });
+  }
+
+  const changeStatus = async (order, nextStatus) => {
+    const confirmed =
+      nextStatus !== 'CANCELLED' ||
+      (await confirmDialog({
+        title: 'Cancel order?',
+        message: `Cancel order ${orderNumber(order._id)}? Its stock will be returned to inventory.`,
+        confirmLabel: 'Cancel order',
+        cancelLabel: 'Keep order',
+        danger: true,
+      }));
+
+    if (!confirmed) return;
+
+    try {
+      setBusy(true);
+      setError('');
+      setNotice('');
+
+      const updated = await updateOrderStatus(
+        token,
+        order._id,
+        nextStatus
+      );
+
+      // Keep the populated customer details from the list.
+      setOrders((previous) =>
+        previous.map((item) =>
+          item._id === order._id
+            ? { ...item, ...updated, user: item.user }
+            : item
+        )
+      );
+
+      setNotice(
+        `${orderNumber(order._id)} is now ${statusLabel(nextStatus).toLowerCase()}.`
+      );
+
+      // Refresh so the status counts and filtered list stay accurate.
+      reloadOrders();
+    } catch (err) {
+      setError(err.message || 'Could not update this order.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <main className="admin-page">
-      <div className="admin-container">
-        <header className="admin-header">
-          <div>
-            <p className="admin-eyebrow">THREADS.COM ADMIN</p>
-            <h1>Order Management</h1>
-            <p>View customer orders and manage their status.</p>
+    <AdminLayout
+      title="Orders"
+      subtitle={`${counts.ALL} ${
+        counts.ALL === 1 ? 'order' : 'orders'
+      } in total`}
+    >
+      {error && (
+        <Notice tone="error" onClose={() => setError('')}>
+          {error}
+        </Notice>
+      )}
+
+      {notice && (
+        <Notice onClose={() => setNotice('')}>{notice}</Notice>
+      )}
+
+      <section className="admin-panel">
+        <div className="admin-toolbar">
+          <div className="admin-tabs" role="group" aria-label="Filter by status">
+            {['ALL', ...STATUS_ORDER].map((status) => (
+              <button
+                key={status}
+                type="button"
+                className={`admin-tab${
+                  statusFilter === status ? ' active' : ''
+                }`}
+                aria-pressed={statusFilter === status}
+                onClick={() => {
+                  setLoading(true);
+                  setPage(1);
+                  setStatusFilter(status);
+                }}
+              >
+                {status === 'ALL' ? 'All' : statusLabel(status)}
+                <span className="admin-tab-count">
+                  {counts[status] || 0}
+                </span>
+              </button>
+            ))}
           </div>
 
-          <NavLink to="/admin" className="admin-button">
-            Back to Dashboard
-          </NavLink>
-        </header>
+          <input
+            className="admin-search"
+            type="search"
+            placeholder="Search by order ID, e.g. #A1B2C3 (or name, email, phone)"
+            value={search}
+            onChange={(event) => {
+              setLoading(true);
+              setPage(1);
+              setSearch(event.target.value);
+            }}
+            aria-label="Search orders by order ID"
+          />
+        </div>
 
-        {error && (
-          <div className="admin-alert" role="alert">
-            {error}
+        {loading ? (
+          <p className="admin-empty">Loading orders…</p>
+        ) : orders.length === 0 ? (
+          <p className="admin-empty">
+            {counts.ALL === 0
+              ? 'No orders have been placed yet.'
+              : 'No orders match this filter. Try another status or clear the search.'}
+          </p>
+        ) : (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Customer</th>
+                  <th>Placed</th>
+                  <th className="num">Items</th>
+                  <th className="num">Total</th>
+                  <th>Payment</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {orders.map((order) => {
+                  const itemCount = (order.items || []).reduce(
+                    (sum, item) => sum + (Number(item.quantity) || 0),
+                    0
+                  );
+
+                  return (
+                    <tr
+                      key={order._id}
+                      className="admin-row-clickable"
+                      onClick={() => openOrder(order._id)}
+                    >
+                      <td>
+                        <button
+                          type="button"
+                          className="admin-link-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openOrder(order._id);
+                          }}
+                        >
+                          {orderNumber(order._id)}
+                        </button>
+                      </td>
+
+                      <td>
+                        {order.shippingAddress?.name ||
+                          order.user?.name ||
+                          '—'}
+                        <small>{order.user?.email || 'Guest checkout'}</small>
+                      </td>
+
+                      <td>{formatDate(order.createdAt)}</td>
+
+                      <td className="num">{itemCount}</td>
+
+                      <td className="num">
+                        {formatCurrency(order.totalAmount)}
+                      </td>
+
+                      <td>
+                        <div>
+                          {order.paymentMethod === 'WALLET'
+                            ? 'Wallet'
+                            : order.paymentMethod === 'ONLINE'
+                              ? 'Online'
+                              : 'Cash on delivery'}
+                        </div>
+                        <small>{statusLabel(order.paymentStatus)}</small>
+                      </td>
+
+                      <td>
+                        <StatusPill status={order.orderStatus} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 
-        <section className="admin-panel">
-          <div className="admin-panel-header">
-            <div>
-              <h2>All Orders</h2>
-              <p>
-                {filteredOrders.length} order
-                {filteredOrders.length === 1 ? '' : 's'} found
-              </p>
-            </div>
-          </div>
+        {!loading && (
+          <Pagination
+            pagination={pagination}
+            itemLabel="orders"
+            onPageChange={(next) => {
+              setLoading(true);
+              setPage(next);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          />
+        )}
+      </section>
 
-          <div className="admin-filters">
-            <input
-              type="search"
-              placeholder="Search order ID, customer or email..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              aria-label="Search orders"
-            />
-
-            <select
-              value={statusFilter}
-              onChange={(event) =>
-                setStatusFilter(event.target.value)
-              }
-              aria-label="Filter orders by status"
-            >
-              <option value="ALL">All Statuses</option>
-
-              {ORDER_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {loading ? (
-            <p className="admin-message">Loading orders...</p>
-          ) : filteredOrders.length === 0 ? (
-            <p className="admin-message">No orders found.</p>
-          ) : (
-            <div className="admin-table-wrapper">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Order ID</th>
-                    <th>Customer</th>
-                    <th>Date</th>
-                    <th>Items</th>
-                    <th>Total</th>
-                    <th>Payment</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredOrders.map((order) => {
-                    const customerName =
-                      order.shippingAddress?.name ||
-                      order.user?.name ||
-                      'N/A';
-
-                    return (
-                      <tr key={order._id}>
-                        <td>
-                          #{order._id.slice(-6).toUpperCase()}
-                        </td>
-
-                        <td>
-                          <strong>{customerName}</strong>
-                          <br />
-                          <small>
-                            {order.user?.email || 'N/A'}
-                          </small>
-                        </td>
-
-                        <td>{formatDate(order.createdAt)}</td>
-
-                        <td>
-                          {order.items?.reduce(
-                            (total, item) =>
-                              total + (Number(item.quantity) || 0),
-                            0
-                          ) || 0}
-                        </td>
-
-                        <td>{formatCurrency(order.totalAmount)}</td>
-
-                        <td>
-                          <div>{order.paymentMethod || 'N/A'}</div>
-                          <small>
-                            {order.paymentStatus || 'N/A'}
-                          </small>
-                        </td>
-
-                        <td>
-                          <select
-                            value={order.orderStatus}
-                            onChange={(event) =>
-                              handleStatusChange(
-                                order._id,
-                                event.target.value
-                              )
-                            }
-                            disabled={updatingId === order._id}
-                            aria-label={`Update order ${order._id} status`}
-                          >
-                            <option value={order.orderStatus}>
-                              {order.orderStatus}
-                            </option>
-
-                            {(
-                              NEXT_STATUSES[order.orderStatus] || []
-                            ).map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-
-                          {updatingId === order._id && (
-                            <small>Updating...</small>
-                          )}
-                        </td>
-
-                        <td>
-                          <button
-                            type="button"
-                            className="admin-button"
-                            onClick={() => setSelectedOrder(order)}
-                          >
-                            View Details
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {selectedOrder && (
-          <div
-            className="admin-modal-overlay"
-            onClick={() => setSelectedOrder(null)}
+      {selectedOrder && (
+        <div
+          className="admin-drawer-overlay"
+          onClick={closeDrawer}
+        >
+          <aside
+            className="admin-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="order-drawer-title"
+            onClick={(event) => event.stopPropagation()}
           >
-            <section
-              className="admin-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="order-details-title"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="admin-panel-header">
-                <div>
-                  <p className="admin-eyebrow">ORDER DETAILS</p>
-                  <h2 id="order-details-title">
-                    #{selectedOrder._id.slice(-6).toUpperCase()}
-                  </h2>
-                </div>
-
-                <button
-                  type="button"
-                  className="admin-button"
-                  onClick={() => setSelectedOrder(null)}
+            <div className="admin-drawer-header">
+              <div>
+                <h2
+                  id="order-drawer-title"
+                  className="admin-drawer-title"
                 >
-                  Close
-                </button>
+                  Order {orderNumber(selectedOrder._id)}
+                </h2>
+                <p className="admin-muted">
+                  Placed {formatDate(selectedOrder.createdAt)}
+                </p>
               </div>
 
-              <h3>Customer</h3>
-              <p>
-                <strong>Name:</strong>{' '}
-                {selectedOrder.shippingAddress?.name ||
-                  selectedOrder.user?.name ||
-                  'N/A'}
-              </p>
-              <p>
-                <strong>Email:</strong>{' '}
-                {selectedOrder.user?.email || 'N/A'}
-              </p>
-              <p>
-                <strong>Phone:</strong>{' '}
-                {selectedOrder.shippingAddress?.phone || 'N/A'}
-              </p>
+              <button
+                type="button"
+                className="admin-icon-button"
+                onClick={closeDrawer}
+                aria-label="Close order details"
+              >
+                <Icon name="x" />
+              </button>
+            </div>
 
-              <h3>Shipping Address</h3>
-              <p>
+            <div className="admin-drawer-pills">
+              <StatusPill status={selectedOrder.orderStatus} />
+              <StatusPill status={selectedOrder.paymentStatus} />
+            </div>
+
+            <div className="admin-drawer-group">
+              <h3>Next step</h3>
+
+              {availableActions(selectedOrder).length === 0 ? (
+                <p className="admin-muted">
+                  No further steps for this order.
+                </p>
+              ) : (
+                <div className="admin-actions-stack">
+                  {availableActions(selectedOrder).map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      className={`admin-button admin-button-block${
+                        status === 'CANCELLED'
+                          ? ' admin-button-danger'
+                          : ' admin-button-primary'
+                      }`}
+                      disabled={busy}
+                      onClick={() => changeStatus(selectedOrder, status)}
+                    >
+                      {ACTION_LABEL[status]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {(selectedOrder.orderStatus === 'PROCESSING' ||
+              selectedOrder.orderStatus === 'SHIPPED') && (
+              <div className="admin-drawer-group">
+                <h3>Shipping</h3>
+                <ShippingForm
+                  key={selectedOrder._id}
+                  order={selectedOrder}
+                  onSave={async (shipping) => {
+                    await setOrderShipping(token, selectedOrder._id, shipping);
+                    setNotice(`Shipping details saved for ${orderNumber(selectedOrder._id)}.`);
+                    reloadOrders();
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="admin-drawer-group">
+              <h3>Customer</h3>
+              <dl className="admin-kv">
+                <dt>Name</dt>
+                <dd>
+                  {selectedOrder.shippingAddress?.name ||
+                    selectedOrder.user?.name ||
+                    '—'}
+                </dd>
+                <dt>Email</dt>
+                <dd>{selectedOrder.user?.email || '—'}</dd>
+                <dt>Phone</dt>
+                <dd>{selectedOrder.shippingAddress?.phone || '—'}</dd>
+              </dl>
+            </div>
+
+            <div className="admin-drawer-group">
+              <h3>Ship to</h3>
+              <p style={{ margin: 0 }}>
                 {[
                   selectedOrder.shippingAddress?.addressLine,
                   selectedOrder.shippingAddress?.city,
@@ -359,73 +509,104 @@ function AdminOrders() {
                   selectedOrder.shippingAddress?.country,
                 ]
                   .filter(Boolean)
-                  .join(', ') || 'No address available'}
+                  .join(', ') || 'No address on file'}
               </p>
+            </div>
 
+            <div className="admin-drawer-group">
               <h3>Items</h3>
 
               {selectedOrder.items?.length ? (
-                selectedOrder.items.map((item, index) => (
-                  <div
-                    className="admin-order-item"
-                    key={`${item.product || item.name}-${index}`}
-                  >
-                    <strong>{item.name || 'Unnamed product'}</strong>
+                <ul className="admin-order-lines">
+                  {selectedOrder.items.map((item, index) => (
+                    <li
+                      className="admin-order-line"
+                      key={`${item.name || 'item'}-${index}`}
+                    >
+                      <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+                        {(() => {
+                          const src =
+                            item.image ||
+                            (item.product && typeof item.product === 'object'
+                              ? item.product.images?.[0]
+                              : '') ||
+                            '';
 
-                    <p>
-                      Quantity: {item.quantity ?? 0}
-                    </p>
-                    <p>Size: {item.size || 'N/A'}</p>
-                    <p>Color: {item.color || 'N/A'}</p>
-                    <p>Unit price: {formatCurrency(item.price)}</p>
-                    <p>
-                      Item total:{' '}
-                      {formatCurrency(
-                        (Number(item.price) || 0) *
-                        (Number(item.quantity) || 0)
-                      )}
-                    </p>
-                  </div>
-                ))
+                          return src ? (
+                            <img
+                              src={src}
+                              alt={item.name || 'Product'}
+                              style={{
+                                width: 56,
+                                height: 70,
+                                objectFit: 'cover',
+                                flexShrink: 0,
+                                border: '1px solid var(--adm-line)',
+                                background: '#f3f1ed',
+                              }}
+                            />
+                          ) : (
+                            <div
+                              aria-label="No image"
+                              style={{
+                                width: 56,
+                                height: 70,
+                                flexShrink: 0,
+                                border: '1px solid var(--adm-line)',
+                                background: '#f3f1ed',
+                              }}
+                            />
+                          );
+                        })()}
+
+                        <div>
+                          {item.name || 'Unnamed product'}
+                          <small>
+                            Qty {item.quantity ?? 0}
+                            {item.size ? ` · Size ${item.size}` : ''}
+                            {item.color ? ` · Color ${item.color}` : ''}
+                            {' · '}
+                            {formatCurrency(item.price)} each
+                          </small>
+                        </div>
+                      </div>
+                      <strong>
+                        {formatCurrency(
+                          (Number(item.price) || 0) *
+                            (Number(item.quantity) || 0)
+                        )}
+                      </strong>
+                    </li>
+                  ))}
+                </ul>
               ) : (
-                <p>No items available.</p>
+                <p className="admin-muted">No items on this order.</p>
               )}
 
-              <h3>Payment and Status</h3>
-              <p>
-                <strong>Payment method:</strong>{' '}
-                {selectedOrder.paymentMethod || 'N/A'}
-              </p>
-              <p>
-                <strong>Payment status:</strong>{' '}
-                {selectedOrder.paymentStatus || 'N/A'}
-              </p>
-              <p>
-                <strong>Order status:</strong>{' '}
-                {selectedOrder.orderStatus || 'N/A'}
-              </p>
-              <p>
-                <strong>Subtotal:</strong>{' '}
-                {formatCurrency(selectedOrder.subtotal)}
-              </p>
-              <p>
-                <strong>Shipping fee:</strong>{' '}
-                {formatCurrency(selectedOrder.shippingFee)}
-              </p>
-              <p>
-                <strong>Total:</strong>{' '}
-                {formatCurrency(selectedOrder.totalAmount)}
-              </p>
-              <p>
-                <strong>Placed:</strong>{' '}
-                {formatDate(selectedOrder.createdAt)}
-              </p>
-            </section>
-          </div>
-        )}
-      </div>
-    </main>
+              <div className="admin-summary-total">
+                <span>Total</span>
+                <span>{formatCurrency(selectedOrder.totalAmount)}</span>
+              </div>
+              <dl className="admin-kv" style={{ marginTop: 12 }}>
+                <dt>Subtotal</dt>
+                <dd>{formatCurrency(selectedOrder.subtotal)}</dd>
+                <dt>Shipping</dt>
+                <dd>{formatCurrency(selectedOrder.shippingFee)}</dd>
+                <dt>Payment</dt>
+                <dd>
+                  {selectedOrder.paymentMethod === 'WALLET'
+                    ? 'Wallet'
+                    : selectedOrder.paymentMethod === 'ONLINE'
+                      ? 'Online (Razorpay)'
+                      : 'Cash on delivery'}
+                </dd>
+              </dl>
+            </div>
+          </aside>
+        </div>
+      )}
+    </AdminLayout>
   );
-}
+};
 
 export default AdminOrders;

@@ -11,6 +11,8 @@ const {
   getMyOrdersController,
   getAllOrdersController,
   updateOrderStatusController,
+  getInvoiceController,
+  setShippingController,
 } = require('./order.controller');
 
 const router = express.Router();
@@ -33,6 +35,9 @@ router.post(
 // Customer: get their own orders
 router.get('/my-orders', authMiddleware, getMyOrdersController);
 
+// Customer or admin: download an order's invoice
+router.get('/:id/invoice', authMiddleware, getInvoiceController);
+
 // Admin: get all orders
 router.get(
   '/admin',
@@ -49,5 +54,13 @@ router.patch(
   updateOrderStatusController
 );
 
+
+// Admin: record courier and tracking number
+router.patch(
+  '/admin/:id/shipping',
+  authMiddleware,
+  roleMiddleware('admin'),
+  setShippingController
+);
 
 module.exports = router;
